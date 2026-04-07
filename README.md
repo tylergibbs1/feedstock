@@ -1,6 +1,12 @@
-# Feedstock
+<p align="center">
+  <img src="logo.svg" alt="Feedstock" width="120" />
+</p>
 
-High-performance web crawler and scraper for TypeScript, powered by [Bun](https://bun.sh) and [Playwright](https://playwright.dev).
+<h1 align="center">Feedstock</h1>
+
+<p align="center">
+  High-performance web crawler and scraper for TypeScript, powered by <a href="https://bun.sh">Bun</a> and <a href="https://playwright.dev">Playwright</a>.
+</p>
 
 ## Features
 

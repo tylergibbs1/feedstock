@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6C8CFF"/>
+      <stop offset="100%" stop-color="#3B5BDB"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer ring — represents the web/network -->
+  <circle cx="256" cy="256" r="200" fill="none" stroke="url(#glow)" stroke-width="18" opacity="0.15"/>
+
+  <!-- Middle ring — crawl radius -->
+  <circle cx="256" cy="256" r="140" fill="none" stroke="url(#glow)" stroke-width="14" opacity="0.3"/>
+
+  <!-- Core circle — the crawler -->
+  <circle cx="256" cy="256" r="64" fill="url(#glow)"/>
+
+  <!-- Inner highlight -->
+  <circle cx="246" cy="244" r="24" fill="white" opacity="0.2"/>
+
+  <!-- Signal spokes — data flowing outward -->
+  <!-- Top -->
+  <line x1="256" y1="180" x2="256" y2="76" stroke="url(#glow)" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="256" cy="56" r="14" fill="url(#glow)"/>
+
+  <!-- Bottom -->
+  <line x1="256" y1="332" x2="256" y2="436" stroke="url(#glow)" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="256" cy="456" r="14" fill="url(#glow)"/>
+
+  <!-- Right -->
+  <line x1="332" y1="256" x2="436" y2="256" stroke="url(#glow)" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="456" cy="256" r="14" fill="url(#glow)"/>
+
+  <!-- Left -->
+  <line x1="180" y1="256" x2="76" y2="256" stroke="url(#glow)" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="56" cy="256" r="14" fill="url(#glow)"/>
+
+  <!-- Diagonal: top-right -->
+  <line x1="301" y1="211" x2="370" y2="142" stroke="url(#glow)" stroke-width="12" stroke-linecap="round" opacity="0.7"/>
+  <circle cx="382" cy="130" r="10" fill="url(#glow)" opacity="0.7"/>
+
+  <!-- Diagonal: bottom-left -->
+  <line x1="211" y1="301" x2="142" y2="370" stroke="url(#glow)" stroke-width="12" stroke-linecap="round" opacity="0.7"/>
+  <circle cx="130" cy="382" r="10" fill="url(#glow)" opacity="0.7"/>
+
+  <!-- Diagonal: top-left -->
+  <line x1="211" y1="211" x2="142" y2="142" stroke="url(#glow)" stroke-width="12" stroke-linecap="round" opacity="0.7"/>
+  <circle cx="130" cy="130" r="10" fill="url(#glow)" opacity="0.7"/>
+
+  <!-- Diagonal: bottom-right -->
+  <line x1="301" y1="301" x2="370" y2="370" stroke="url(#glow)" stroke-width="12" stroke-linecap="round" opacity="0.7"/>
+  <circle cx="382" cy="382" r="10" fill="url(#glow)" opacity="0.7"/>
+</svg>
