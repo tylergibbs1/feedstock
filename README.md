@@ -23,8 +23,16 @@
 - **Multiple browser backends** — Playwright (Chromium/Firefox/WebKit) or [Lightpanda](https://lightpanda.io) (local/cloud)
 - **Proxy rotation** — round-robin strategy with health tracking
 - **URL seeding** — discover URLs from sitemaps
+- **Accessibility snapshots** — compact semantic page representation with `@e` refs for AI consumption
+- **Fetch-first engine system** — tries lightweight HTTP before launching browser, auto-escalates for SPAs
+- **Rich metadata** — 50+ fields: Open Graph, Twitter Cards, Dublin Core, JSON-LD, favicons, feeds
 - **Content processing** — chunking (regex, sliding window, fixed-size) and filtering (pruning, BM25)
+- **Interactive element detection** — finds all clickable elements including cursor:pointer and onclick handlers
+- **Storage state persistence** — save/load cookies and localStorage between sessions
+- **AI-friendly errors** — converts 20+ error patterns into actionable messages
+- **Hooks** — inject custom behavior at 5 lifecycle points (page created, before/after navigation, etc.)
 - **Crawler monitoring** — real-time stats tracking (pages/sec, success rates, data volume)
+- **Configurable logging** — pluggable Logger interface with ConsoleLogger and SilentLogger
 
 ## Quick Start
 
@@ -269,27 +277,85 @@ console.log(monitor.formatStats());
 // Downloaded: 0.04 MB
 ```
 
+## Accessibility Snapshots
+
+Compact semantic page representation — 3-10x smaller than HTML:
+
+```typescript
+const result = await crawler.crawl("https://example.com", {
+  snapshot: true,
+});
+
+console.log(result.snapshot);
+// @e1 [heading] "Example Domain" [level=1]
+// @e2 [link] "More information..." [-> https://www.iana.org/domains/example]
+```
+
+## Hooks
+
+Inject custom behavior at key lifecycle points:
+
+```typescript
+crawler.setHook("afterGoto", async (page) => {
+  // Dismiss cookie banners, expand sections, etc.
+  const banner = page.locator('[class*="cookie"]');
+  if (await banner.isVisible()) await banner.locator("button").first().click();
+});
+```
+
+Available hooks: `onPageCreated`, `beforeGoto`, `afterGoto`, `onExecutionStarted`, `beforeReturnHtml`.
+
+## Interactive Element Detection
+
+Find all clickable elements including those without ARIA roles:
+
+```typescript
+import { detectInteractiveElements } from "feedstock";
+
+crawler.setHook("beforeReturnHtml", async (page) => {
+  const elements = await detectInteractiveElements(page);
+  console.log(`Found ${elements.length} interactive elements`);
+  // Each has: tag, text, href, role, type, selector
+});
+```
+
+## Storage State
+
+Persist cookies/localStorage between sessions:
+
+```typescript
+import { saveStorageState, loadStorageState } from "feedstock";
+
+// Save after login
+await saveStorageState(page.context());
+
+// Load in next session
+const state = loadStorageState();
+```
+
 ## Process HTML Without Browser
 
 ```typescript
 const html = "<html><body><h1>Hello</h1><p>World</p></body></html>";
-const result = await crawler.processHtml(html);
+const result = await crawler.processHtml(html, { snapshot: true });
 console.log(result.markdown?.rawMarkdown);
+console.log(result.snapshot);
 ```
 
 ## Documentation
 
-Full documentation at [feedstock-docs](https://github.com/tylergibbs1/feedstock-docs).
+Full documentation at [usefeedstock.com](https://www.usefeedstock.com/).
 
 ## Development
 
 ```bash
 bun install
-bun test              # 160 tests
+bun test              # 265 tests
 bun test tests/unit   # unit tests only
 bun run typecheck     # tsc --noEmit
 bun run lint          # biome check
 bun run check         # lint + typecheck
+bun run dogfood.ts    # 101 checks against real sites
 ```
 
 ## License
