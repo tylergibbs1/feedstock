@@ -60,6 +60,7 @@ export {
 	createEmptyLinks,
 	createEmptyMedia,
 	createErrorResult,
+	type InteractiveElement,
 	type LinkItem,
 	type Links,
 	type MarkdownGenerationResult,
@@ -68,6 +69,14 @@ export {
 	type NetworkRequest,
 	type ScrapingResult,
 } from "./models";
+// Snapshot
+export {
+	buildStaticSnapshot,
+	type PageSnapshot,
+	type SnapshotNode,
+	type SnapshotOptions,
+	takeSnapshot,
+} from "./snapshot";
 // Chunking
 export {
 	ChunkingStrategy,
@@ -122,12 +131,15 @@ export {
 	simulateUser,
 	withRetry,
 } from "./utils/antibot";
+export { toFriendlyError, withFriendlyErrors } from "./utils/errors";
 export {
 	cleanHtml,
 	extractLinks,
 	extractMedia,
 	extractMetadata,
 } from "./utils/html";
+export { extractIframeContent, type InlinedIframe, inlineIframeContent } from "./utils/iframe";
+export { detectInteractiveElements } from "./utils/interactive";
 // Utils
 export {
 	ConsoleLogger,
@@ -139,4 +151,11 @@ export { CrawlerMonitor, type CrawlStats } from "./utils/monitor";
 export { type ProxyRotationConfig, ProxyRotationStrategy } from "./utils/proxy-rotation";
 export { RateLimiter, type RateLimiterConfig } from "./utils/rate-limiter";
 export { type RobotsDirectives, RobotsParser, type RobotsRule } from "./utils/robots";
+export {
+	applyStorageState,
+	getStorageStatePath,
+	loadStorageState,
+	type StorageState,
+	saveStorageState,
+} from "./utils/storage";
 export { type SeedResult, URLSeeder } from "./utils/url-seeder";

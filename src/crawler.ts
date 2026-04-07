@@ -14,6 +14,7 @@ import { FetchEngine } from "./engines/fetch";
 import { PlaywrightEngine } from "./engines/playwright";
 import type { CrawlResult } from "./models";
 import { createErrorResult } from "./models";
+import { buildStaticSnapshot } from "./snapshot/accessibility";
 import {
 	type CrawlerStrategy,
 	type HookFn,
@@ -28,6 +29,7 @@ import {
 	CheerioScrapingStrategy,
 	type ContentScrapingStrategy,
 } from "./strategies/scraping-strategy";
+import { toFriendlyError } from "./utils/errors";
 import type { Logger } from "./utils/logger";
 import { ConsoleLogger, SilentLogger } from "./utils/logger";
 
@@ -179,6 +181,13 @@ export class WebCrawler {
 				extractedContent = JSON.stringify(items);
 			}
 
+			// Generate snapshot (static — works with any engine)
+			let snapshot: string | null = null;
+			if (runConfig.snapshot) {
+				const snap = buildStaticSnapshot(response.html);
+				snapshot = snap.text;
+			}
+
 			const result: CrawlResult = {
 				url,
 				html: response.html,
@@ -198,6 +207,8 @@ export class WebCrawler {
 				networkRequests: response.networkRequests,
 				consoleMessages: response.consoleMessages,
 				sessionId: runConfig.sessionId,
+				snapshot,
+				interactiveElements: null,
 				cacheStatus: "miss",
 				cachedAt: null,
 			};
@@ -209,7 +220,7 @@ export class WebCrawler {
 
 			return result;
 		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
+			const message = toFriendlyError(err);
 			this.logger.error(`Crawl failed for ${url}: ${message}`);
 			return createErrorResult(url, message);
 		}
@@ -286,6 +297,8 @@ export class WebCrawler {
 			networkRequests: null,
 			consoleMessages: null,
 			sessionId: null,
+			snapshot: runConfig.snapshot ? buildStaticSnapshot(html).text : null,
+			interactiveElements: null,
 			cacheStatus: null,
 			cachedAt: null,
 		};

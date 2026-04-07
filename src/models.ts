@@ -110,9 +110,21 @@ export interface CrawlResult {
 	networkRequests: NetworkRequest[] | null;
 	consoleMessages: ConsoleMessage[] | null;
 	sessionId: string | null;
+	// Accessibility snapshot
+	snapshot: string | null;
+	interactiveElements: InteractiveElement[] | null;
 	// Cache metadata
 	cacheStatus: "hit" | "miss" | "bypass" | null;
 	cachedAt: number | null;
+}
+
+export interface InteractiveElement {
+	tag: string;
+	text: string;
+	href: string | null;
+	role: string | null;
+	type: string | null;
+	selector: string;
 }
 
 export function createEmptyMedia(): Media {
@@ -143,6 +155,8 @@ export function createErrorResult(url: string, error: string): CrawlResult {
 		networkRequests: null,
 		consoleMessages: null,
 		sessionId: null,
+		snapshot: null,
+		interactiveElements: null,
 		cacheStatus: null,
 		cachedAt: null,
 	};

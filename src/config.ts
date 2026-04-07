@@ -94,6 +94,11 @@ export interface CrawlerRunConfig {
 	// Markdown
 	generateMarkdown: boolean;
 
+	// Snapshot
+	snapshot: boolean;
+	detectInteractiveElements: boolean;
+	inlineIframes: boolean;
+
 	// Anti-bot
 	simulateUser: boolean;
 	magicMode: boolean;
@@ -129,6 +134,10 @@ const DEFAULT_CRAWLER_RUN_CONFIG: CrawlerRunConfig = {
 	sessionId: null,
 
 	generateMarkdown: true,
+
+	snapshot: false,
+	detectInteractiveElements: false,
+	inlineIframes: false,
 
 	simulateUser: false,
 	magicMode: false,
