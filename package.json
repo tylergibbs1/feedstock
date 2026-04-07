@@ -10,6 +10,33 @@
       "import": "./src/index.ts"
     }
   },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md",
+    "logo.svg"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tylergibbs1/feedstock.git"
+  },
+  "keywords": [
+    "crawler",
+    "scraper",
+    "web-crawler",
+    "playwright",
+    "bun",
+    "typescript",
+    "markdown",
+    "extraction",
+    "deep-crawl",
+    "lightpanda"
+  ],
+  "author": "grayhaven",
+  "homepage": "https://github.com/tylergibbs1/feedstock",
+  "bugs": {
+    "url": "https://github.com/tylergibbs1/feedstock/issues"
+  },
   "scripts": {
     "test": "bun test",
     "test:unit": "bun test tests/unit",

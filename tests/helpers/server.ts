@@ -139,6 +139,22 @@ export function startTestServer(): TestServer {
 				new Response("fake-image-data", { headers: { "content-type": "image/jpeg" } }),
 			"/images/thumb.png": () =>
 				new Response("fake-image-data", { headers: { "content-type": "image/png" } }),
+			"/robots.txt": () =>
+				new Response(
+					[
+						"User-agent: *",
+						"Disallow: /tables",
+						"Disallow: /error",
+						"Allow: /",
+						"",
+						`Sitemap: http://localhost:${server.port}/sitemap.xml`,
+					].join("\n"),
+					{ headers: { "content-type": "text/plain" } },
+				),
+			"/console-page": () =>
+				html(
+					'<html><body><h1>Console</h1><script>console.log("hello from page");</script></body></html>',
+				),
 		},
 		fetch(req): Response | Promise<Response> {
 			const url = new URL(req.url);
@@ -150,7 +166,10 @@ export function startTestServer(): TestServer {
 					setTimeout(() => resolve(html("<html><body><p>Slow response</p></body></html>")), 1500),
 				);
 			}
-			return new Response("Not Found", { status: 404 });
+			return new Response(
+				"<html><body><h1>404 Not Found</h1><p>This page does not exist.</p></body></html>",
+				{ status: 404, headers: { "content-type": "text/html" } },
+			);
 		},
 	});
 
