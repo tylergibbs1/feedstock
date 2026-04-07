@@ -562,9 +562,73 @@ try {
 	}
 
 	// -----------------------------------------------------------------------
-	// 25. Monitor stats
+	// 25. Change tracking
 	// -----------------------------------------------------------------------
-	console.log("\n\x1b[1m25. Crawler monitor\x1b[0m");
+	console.log("\n\x1b[1m25. Change tracking\x1b[0m");
+	{
+		const { ChangeTracker } = await import("./src/utils/change-tracker");
+		const tracker = new ChangeTracker({ dbPath: "/tmp/feedstock-dogfood-changes.db" });
+
+		// Clean any previous runs
+		for (const snap of tracker.listSnapshots()) {
+			tracker.deleteSnapshot(snap.id);
+		}
+
+		// Crawl 1: all pages should be "new"
+		const r1 = await crawler.crawl("https://example.com", { cacheMode: CacheMode.Bypass });
+		const report1 = tracker.compare([r1], "dogfood-v1");
+
+		check("first run: all new", report1.summary.new === 1);
+		check("first run: no previous snapshot", report1.previousSnapshotId === null);
+		check("has snapshot ID", report1.snapshotId === "dogfood-v1");
+
+		// Crawl 2 (same content): should be "unchanged"
+		const r2 = await crawler.crawl("https://example.com", { cacheMode: CacheMode.Bypass });
+		const report2 = tracker.compare([r2], "dogfood-v2");
+
+		check("second run: unchanged", report2.summary.unchanged === 1, `got ${report2.summary.unchanged}`);
+		check("second run: previous is v1", report2.previousSnapshotId === "dogfood-v1");
+		check("second run: no changes", report2.summary.changed === 0);
+
+		// Simulate a "changed" page by modifying content
+		const fakeChanged = { ...r2, html: r2.html + "<!-- modified -->", cleanedHtml: (r2.cleanedHtml ?? "") + " modified", markdown: r2.markdown ? { ...r2.markdown, rawMarkdown: r2.markdown.rawMarkdown + "\n\nNew content added." } : null };
+		const report3 = tracker.compare([fakeChanged], "dogfood-v3");
+
+		check("changed detected", report3.summary.changed === 1);
+		const change = report3.changes.find((c) => c.status === "changed");
+		check("has diff", !!change?.diff);
+		check("diff has additions", (change?.diff?.additions ?? 0) > 0, `+${change?.diff?.additions}`);
+
+		// Simulate a "removed" page by not including the URL
+		const report4 = tracker.compare([], "dogfood-v4");
+
+		check("removed detected", report4.summary.removed === 1);
+		const removed = report4.changes.find((c) => c.status === "removed");
+		check("removed URL correct", removed?.url.includes("example.com"), removed?.url);
+
+		// Snapshot management
+		const snapshots = tracker.listSnapshots();
+		check("snapshots stored", snapshots.length >= 3, `${snapshots.length} snapshots`);
+
+		tracker.deleteSnapshot("dogfood-v1");
+		check("delete works", tracker.listSnapshots().length < snapshots.length);
+
+		const pruned = tracker.pruneOlderThan(1); // 1ms — nothing should be that old
+		check("prune with tiny window: 0 removed", pruned === 0);
+
+		// Clean up
+		tracker.close();
+		const { unlinkSync, existsSync } = await import("node:fs");
+		for (const suffix of ["", "-wal", "-shm"]) {
+			const p = `/tmp/feedstock-dogfood-changes.db${suffix}`;
+			if (existsSync(p)) try { unlinkSync(p); } catch {}
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// 26. Monitor stats
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m26. Crawler monitor\x1b[0m");
 	{
 		const stats = monitor.getStats();
 		check("tracked pages", stats.pagesTotal >= 3, `${stats.pagesTotal} pages`);
