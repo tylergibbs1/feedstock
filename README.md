@@ -31,6 +31,7 @@
 - **Storage state persistence** — save/load cookies and localStorage between sessions
 - **AI-friendly errors** — converts 20+ error patterns into actionable messages
 - **Hooks** — inject custom behavior at 5 lifecycle points (page created, before/after navigation, etc.)
+- **Change tracking** — detect new/changed/unchanged/removed pages between crawl runs with text diffs
 - **Crawler monitoring** — real-time stats tracking (pages/sec, success rates, data volume)
 - **Configurable logging** — pluggable Logger interface with ConsoleLogger and SilentLogger
 
@@ -350,7 +351,7 @@ Full documentation at [usefeedstock.com](https://www.usefeedstock.com/).
 
 ```bash
 bun install
-bun test              # 265 tests
+bun test              # 277 tests
 bun test tests/unit   # unit tests only
 bun run typecheck     # tsc --noEmit
 bun run lint          # biome check
