@@ -3,6 +3,7 @@
 export { CrawlCache } from "./cache/database";
 // Cache
 export { CacheMode } from "./cache/mode";
+export { type CacheValidationResult, CacheValidator } from "./cache/validator";
 // Config
 export {
 	type BrowserBackend,
@@ -55,6 +56,20 @@ export {
 	type NetworkRequest,
 	type ScrapingResult,
 } from "./models";
+// Chunking
+export {
+	ChunkingStrategy,
+	FixedSizeChunking,
+	IdentityChunking,
+	RegexChunking,
+	SlidingWindowChunking,
+} from "./strategies/chunking";
+// Content Filters
+export {
+	BM25ContentFilter,
+	ContentFilterStrategy,
+	PruningContentFilter,
+} from "./strategies/content-filter";
 // Strategies
 export {
 	CrawlerStrategy,
@@ -73,6 +88,13 @@ export {
 	type CssField,
 } from "./strategies/extraction/css";
 export { RegexExtractionStrategy } from "./strategies/extraction/regex";
+// Additional Extraction
+export { TableExtractionStrategy } from "./strategies/extraction/table";
+export {
+	type XPathExtractionSchema,
+	XPathExtractionStrategy,
+	type XPathField,
+} from "./strategies/extraction/xpath";
 export {
 	DefaultMarkdownGenerator,
 	MarkdownGenerationStrategy,
@@ -81,6 +103,13 @@ export {
 	CheerioScrapingStrategy,
 	ContentScrapingStrategy,
 } from "./strategies/scraping-strategy";
+export {
+	applyStealthMode,
+	isBlocked,
+	type RetryConfig,
+	simulateUser,
+	withRetry,
+} from "./utils/antibot";
 export {
 	cleanHtml,
 	extractLinks,
@@ -94,5 +123,8 @@ export {
 	type LogLevel,
 	SilentLogger,
 } from "./utils/logger";
+export { CrawlerMonitor, type CrawlStats } from "./utils/monitor";
+export { type ProxyRotationConfig, ProxyRotationStrategy } from "./utils/proxy-rotation";
 export { RateLimiter, type RateLimiterConfig } from "./utils/rate-limiter";
 export { type RobotsDirectives, RobotsParser, type RobotsRule } from "./utils/robots";
+export { type SeedResult, URLSeeder } from "./utils/url-seeder";
