@@ -1,0 +1,5 @@
+[test]
+timeout = 30000
+
+[install]
+exact = true

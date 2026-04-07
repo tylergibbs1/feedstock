@@ -1,0 +1,38 @@
+{
+  "name": "feedstock",
+  "version": "0.1.0",
+  "description": "High-performance web crawler and scraper for TypeScript, powered by Bun and Playwright",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "bun test",
+    "test:unit": "bun test tests/unit",
+    "test:integration": "bun test tests/integration",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src/ tests/",
+    "lint:fix": "biome check --write src/ tests/",
+    "format": "biome format --write src/ tests/",
+    "check": "biome check src/ tests/ && tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0",
+    "turndown": "^7.2.0",
+    "cheerio": "^1.0.0"
+  },
+  "optionalDependencies": {
+    "@lightpanda/browser": "^1.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.10",
+    "@types/bun": "latest",
+    "@types/turndown": "^5.0.5",
+    "typescript": "^5.8.0"
+  },
+  "license": "Apache-2.0"
+}
