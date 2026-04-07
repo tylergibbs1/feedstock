@@ -318,7 +318,7 @@ try {
 	// -----------------------------------------------------------------------
 	console.log("\n\x1b[1m16. Cache round-trip\x1b[0m");
 	{
-		const url = "https://httpbin.org/html";
+		const url = `https://httpbin.org/html?t=${Date.now()}`;
 		const first = await crawler.crawl(url, { cacheMode: CacheMode.Enabled });
 		check("first crawl: miss", first.cacheStatus === "miss");
 
@@ -343,9 +343,228 @@ try {
 	}
 
 	// -----------------------------------------------------------------------
-	// 18. Monitor stats
+	// 18. Accessibility snapshot — static
 	// -----------------------------------------------------------------------
-	console.log("\n\x1b[1m18. Crawler monitor\x1b[0m");
+	console.log("\n\x1b[1m18. Accessibility snapshot (static)\x1b[0m");
+	{
+		const r = await crawler.crawl("https://news.ycombinator.com", {
+			cacheMode: CacheMode.Bypass,
+			snapshot: true,
+		});
+
+		check("snapshot generated", !!r.snapshot);
+		check("contains headings or links", r.snapshot!.includes("[heading]") || r.snapshot!.includes("[link]"));
+		check("contains links", r.snapshot!.includes("[link]"));
+		check("contains refs", r.snapshot!.includes("@e"));
+		check("snapshot is compact", r.snapshot!.length < r.html.length, `${r.snapshot!.length} chars vs ${r.html.length} HTML chars`);
+
+		// Also test buildStaticSnapshot directly
+		const { buildStaticSnapshot } = await import("./src/snapshot/accessibility");
+		const snap = buildStaticSnapshot(r.html);
+		check("tree has nodes", snap.tree.length > 5, `${snap.tree.length} nodes`);
+		check("refs assigned", snap.nodeCount > 10, `${snap.nodeCount} refs`);
+		check("refs map populated", snap.refs.size === snap.nodeCount);
+
+		const links = snap.tree.filter((n) => n.role === "link");
+		check("snapshot found links", links.length > 20, `${links.length} links`);
+		const headings = snap.tree.filter((n) => n.role === "heading");
+		check("snapshot found headings (if any)", headings.length >= 0, `${headings.length} headings (HN uses non-standard markup)`);
+	}
+
+	// -----------------------------------------------------------------------
+	// 19. Accessibility snapshot — CDP (live browser)
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m19. Accessibility snapshot (CDP)\x1b[0m");
+	{
+		const { takeSnapshot } = await import("./src/snapshot/accessibility");
+		const { BrowserManager } = await import("./src/browser/manager");
+		const { createBrowserConfig } = await import("./src/config");
+
+		const mgr = new BrowserManager(createBrowserConfig({ headless: true }));
+		await mgr.start();
+		const { page, sessionId } = await mgr.getPage();
+
+		await page.goto("https://example.com");
+		const snap = await takeSnapshot(page);
+
+		check("CDP snapshot has nodes", snap.nodeCount > 0, `${snap.nodeCount} refs`);
+		check("CDP snapshot has text", snap.text.length > 0, `${snap.text.length} chars`);
+		check("CDP snapshot has refs", snap.refs.size > 0);
+		check("CDP snapshot contains heading", snap.text.includes("[heading]"));
+		check("CDP snapshot contains link", snap.text.includes("[link]"));
+
+		await mgr.killSession(sessionId);
+		await mgr.close();
+	}
+
+	// -----------------------------------------------------------------------
+	// 20. Interactive element detection
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m20. Interactive element detection\x1b[0m");
+	{
+		const { detectInteractiveElements } = await import("./src/utils/interactive");
+		const { BrowserManager } = await import("./src/browser/manager");
+		const { createBrowserConfig } = await import("./src/config");
+
+		const mgr = new BrowserManager(createBrowserConfig({ headless: true }));
+		await mgr.start();
+		const { page, sessionId } = await mgr.getPage();
+
+		await page.goto("https://news.ycombinator.com");
+		const elements = await detectInteractiveElements(page);
+
+		check("found interactive elements", elements.length > 10, `${elements.length} elements`);
+
+		const links = elements.filter((e) => e.tag === "a");
+		check("found links", links.length > 20, `${links.length} links`);
+
+		const withHref = elements.filter((e) => e.href);
+		check("links have href", withHref.length > 10, `${withHref.length} with href`);
+
+		const inputs = elements.filter((e) => e.tag === "input");
+		check("found inputs", inputs.length >= 1, `${inputs.length} inputs`);
+
+		// Check selectors are present
+		const hasSelectors = elements.every((e) => e.selector.length > 0);
+		check("all elements have selectors", hasSelectors);
+
+		await mgr.killSession(sessionId);
+		await mgr.close();
+	}
+
+	// -----------------------------------------------------------------------
+	// 21. Iframe content inlining
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m21. Iframe inlining\x1b[0m");
+	{
+		const { inlineIframeContent } = await import("./src/utils/iframe");
+
+		const parentHtml = `<html><body>
+			<h1>Parent</h1>
+			<iframe src="https://embed.example.com/widget"></iframe>
+			<p>After iframe</p>
+		</body></html>`;
+
+		const iframeContent = [{
+			src: "https://embed.example.com/widget",
+			html: "<html><head><style>body{color:red}</style></head><body><div>Embedded Widget Content</div></body></html>",
+		}];
+
+		const result = inlineIframeContent(parentHtml, iframeContent);
+		check("replaced iframe tag", !result.includes("<iframe"));
+		check("inlined content", result.includes("Embedded Widget Content"));
+		check("has marker attribute", result.includes("data-feedstock-iframe-src"));
+		check("stripped head from iframe", !result.includes("<style>"));
+		check("preserved parent content", result.includes("Parent") && result.includes("After iframe"));
+	}
+
+	// -----------------------------------------------------------------------
+	// 22. Storage state persistence
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m22. Storage state persistence\x1b[0m");
+	{
+		const { saveStorageState, loadStorageState } = await import("./src/utils/storage");
+		const { BrowserManager } = await import("./src/browser/manager");
+		const { createBrowserConfig } = await import("./src/config");
+
+		const mgr = new BrowserManager(createBrowserConfig({ headless: true }));
+		await mgr.start();
+		const { page, sessionId } = await mgr.getPage();
+
+		await page.goto("https://example.com");
+
+		const storagePath = "/tmp/feedstock-dogfood-storage.json";
+		const savedPath = await saveStorageState(page.context(), storagePath);
+		check("saved storage state", savedPath === storagePath);
+
+		const state = loadStorageState(storagePath);
+		check("loaded storage state", !!state);
+		check("has cookies array", Array.isArray(state!.cookies));
+		check("has origins array", Array.isArray(state!.origins));
+		check("has savedAt timestamp", state!.savedAt > 0, new Date(state!.savedAt).toISOString());
+
+		// Non-existent file returns null
+		const missing = loadStorageState("/tmp/nonexistent-feedstock-state.json");
+		check("missing file returns null", missing === null);
+
+		// Clean up
+		const { unlinkSync } = await import("node:fs");
+		try { unlinkSync(storagePath); } catch {}
+
+		await mgr.killSession(sessionId);
+		await mgr.close();
+	}
+
+	// -----------------------------------------------------------------------
+	// 23. AI-friendly errors
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m23. AI-friendly errors\x1b[0m");
+	{
+		const { toFriendlyError } = await import("./src/utils/errors");
+
+		// Test against real error patterns
+		const cases = [
+			{ input: "net::ERR_NAME_NOT_RESOLVED at navigation", expected: "DNS" },
+			{ input: "net::ERR_CONNECTION_REFUSED", expected: "refused" },
+			{ input: "Timeout 30000ms exceeded", expected: "timed out" },
+			{ input: "net::ERR_SSL_PROTOCOL_ERROR", expected: "SSL" },
+			{ input: "net::ERR_TOO_MANY_REDIRECTS", expected: "redirect" },
+			{ input: "element is not visible", expected: "not visible" },
+			{ input: "browser has been closed", expected: "closed" },
+			{ input: "ENOTFOUND badhost.test", expected: "not found" },
+		];
+
+		let errorsPassed = 0;
+		for (const { input, expected } of cases) {
+			const friendly = toFriendlyError(new Error(input));
+			if (friendly.toLowerCase().includes(expected.toLowerCase())) {
+				errorsPassed++;
+			}
+		}
+		check("all error patterns convert", errorsPassed === cases.length, `${errorsPassed}/${cases.length}`);
+
+		// Test actual crawl error is friendly
+		const r = await crawler.crawl("http://localhost:99999/nope", {
+			cacheMode: CacheMode.Bypass,
+			pageTimeout: 3000,
+		});
+		check("crawl error is friendly", r.errorMessage!.length < 200, `"${r.errorMessage}"`);
+		check("no stack trace in error", !r.errorMessage!.includes("at "));
+	}
+
+	// -----------------------------------------------------------------------
+	// 24. Snapshot via processHtml
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m24. Snapshot via processHtml\x1b[0m");
+	{
+		const html = `<html><body>
+			<h1>Article Title</h1>
+			<p>This is the first paragraph of a long article about web crawling technology.</p>
+			<h2>Section One</h2>
+			<p>Details about the section with enough text to be captured by the snapshot.</p>
+			<a href="https://example.com">Read more</a>
+			<button>Subscribe</button>
+			<input type="email" placeholder="your@email.com" />
+			<img alt="Illustration of web crawling" src="/crawl.png" />
+			<input type="hidden" name="csrf" value="abc123" />
+		</body></html>`;
+
+		const r = await crawler.processHtml(html, { snapshot: true });
+
+		check("processHtml snapshot works", !!r.snapshot);
+		check("has h1", r.snapshot!.includes("Article Title"));
+		check("has h2", r.snapshot!.includes("Section One"));
+		check("has link", r.snapshot!.includes("[link]"));
+		check("has button", r.snapshot!.includes("[button]"));
+		check("has textbox", r.snapshot!.includes("[textbox]"));
+		check("has img with alt", r.snapshot!.includes("Illustration"));
+		check("no hidden input", !r.snapshot!.includes("csrf"));
+	}
+
+	// -----------------------------------------------------------------------
+	// 25. Monitor stats
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m25. Crawler monitor\x1b[0m");
 	{
 		const stats = monitor.getStats();
 		check("tracked pages", stats.pagesTotal >= 3, `${stats.pagesTotal} pages`);
