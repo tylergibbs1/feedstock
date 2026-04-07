@@ -30,6 +30,7 @@ export {
 	DomainAuthorityScorer,
 	DomainFilter,
 	FilterChain,
+	type FilterResult,
 	type FilterStats,
 	FreshnessScorer,
 	KeywordRelevanceScorer,
@@ -40,6 +41,17 @@ export {
 	URLPatternFilter,
 	URLScorer,
 } from "./deep-crawl";
+// Engines
+export {
+	Engine,
+	type EngineCapabilities,
+	EngineManager,
+	type EngineManagerConfig,
+	type EngineResult,
+	FetchEngine,
+	likelyNeedsJavaScript,
+	PlaywrightEngine,
+} from "./engines";
 // Models
 export {
 	type ConsoleMessage,

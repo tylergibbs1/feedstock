@@ -2,6 +2,7 @@ export {
 	ContentTypeFilter,
 	DomainFilter,
 	FilterChain,
+	type FilterResult,
 	type FilterStats,
 	MaxDepthFilter,
 	URLFilter,

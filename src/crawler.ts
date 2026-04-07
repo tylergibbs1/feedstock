@@ -8,6 +8,10 @@ import {
 	BFSDeepCrawlStrategy,
 	createDeepCrawlConfig,
 } from "./deep-crawl/strategy";
+import type { EngineManagerConfig } from "./engines/engine-manager";
+import { EngineManager } from "./engines/engine-manager";
+import { FetchEngine } from "./engines/fetch";
+import { PlaywrightEngine } from "./engines/playwright";
 import type { CrawlResult } from "./models";
 import { createErrorResult } from "./models";
 import {
@@ -39,6 +43,13 @@ export interface WebCrawlerOptions {
 	logger?: Logger;
 	cacheDir?: string;
 	verbose?: boolean;
+	/**
+	 * Enable the multi-engine system. When true, tries a lightweight
+	 * HTTP fetch first and only launches a browser when needed
+	 * (JS rendering, screenshots, etc). Default: true.
+	 */
+	useEngines?: boolean;
+	engineConfig?: Partial<EngineManagerConfig>;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,7 +57,8 @@ export interface WebCrawlerOptions {
 // ---------------------------------------------------------------------------
 
 export class WebCrawler {
-	private strategy: CrawlerStrategy;
+	private strategy: CrawlerStrategy | null;
+	private engineManager: EngineManager | null;
 	private scraper: ContentScrapingStrategy;
 	private markdownGen: MarkdownGenerationStrategy;
 	private cache: CrawlCache | null = null;
@@ -65,7 +77,19 @@ export class WebCrawler {
 			verbose,
 		});
 
-		this.strategy = opts.crawlerStrategy ?? new PlaywrightCrawlerStrategy(this.browserConfig);
+		const useEngines = opts.useEngines ?? true;
+
+		if (useEngines && !opts.crawlerStrategy) {
+			this.strategy = null;
+			this.engineManager = new EngineManager(
+				[new FetchEngine(), new PlaywrightEngine(this.browserConfig)],
+				{ config: opts.engineConfig, logger: this.logger },
+			);
+		} else {
+			this.strategy = opts.crawlerStrategy ?? new PlaywrightCrawlerStrategy(this.browserConfig);
+			this.engineManager = null;
+		}
+
 		this.scraper = opts.scrapingStrategy ?? new CheerioScrapingStrategy();
 		this.markdownGen = opts.markdownGenerator ?? new DefaultMarkdownGenerator();
 	}
@@ -76,7 +100,11 @@ export class WebCrawler {
 
 	async start(): Promise<void> {
 		if (this.ready) return;
-		await this.strategy.start();
+		if (this.engineManager) {
+			await this.engineManager.start();
+		} else if (this.strategy) {
+			await this.strategy.start();
+		}
 		this.cache = new CrawlCache();
 		this.ready = true;
 		this.logger.info("Crawler started");
@@ -84,7 +112,11 @@ export class WebCrawler {
 
 	async close(): Promise<void> {
 		if (!this.ready) return;
-		await this.strategy.close();
+		if (this.engineManager) {
+			await this.engineManager.close();
+		} else if (this.strategy) {
+			await this.strategy.close();
+		}
 		this.cache?.close();
 		this.cache = null;
 		this.ready = false;
@@ -96,7 +128,9 @@ export class WebCrawler {
 	// -------------------------------------------------------------------------
 
 	setHook(type: HookType, fn: HookFn): void {
-		this.strategy.setHook(type, fn);
+		if (this.strategy) {
+			this.strategy.setHook(type, fn);
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -124,7 +158,9 @@ export class WebCrawler {
 			}
 
 			// Fetch page
-			const response = await this.strategy.crawl(url, runConfig);
+			const response = this.engineManager
+				? (await this.engineManager.fetch(url, runConfig)).response
+				: await this.strategy!.crawl(url, runConfig);
 
 			// Scrape content
 			const scraped = this.scraper.scrape(url, response.html, runConfig);

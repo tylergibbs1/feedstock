@@ -15,6 +15,12 @@ export interface FilterStats {
 	rejected: number;
 }
 
+export interface FilterResult {
+	allowed: boolean;
+	reason?: string;
+	filter?: string;
+}
+
 export abstract class URLFilter {
 	readonly name: string;
 	private stats: FilterStats = { total: 0, passed: 0, rejected: 0 };
@@ -34,7 +40,32 @@ export abstract class URLFilter {
 		return result;
 	}
 
+	/**
+	 * Apply the filter and return a reason if rejected.
+	 */
+	async applyWithReason(url: string): Promise<FilterResult> {
+		this.stats.total++;
+		const result = await this.test(url);
+		if (result) {
+			this.stats.passed++;
+			return { allowed: true };
+		}
+		this.stats.rejected++;
+		return {
+			allowed: false,
+			reason: this.getDenialReason(url),
+			filter: this.name,
+		};
+	}
+
 	protected abstract test(url: string): Promise<boolean> | boolean;
+
+	/**
+	 * Override to provide a human-readable denial reason.
+	 */
+	protected getDenialReason(_url: string): string {
+		return `Rejected by ${this.name} filter`;
+	}
 
 	getStats(): FilterStats {
 		return { ...this.stats };
@@ -47,6 +78,7 @@ export abstract class URLFilter {
 
 export class FilterChain {
 	private filters: URLFilter[];
+	private denials: Array<{ url: string; reason: string; filter: string }> = [];
 
 	constructor(filters: URLFilter[] = []) {
 		this.filters = filters;
@@ -62,11 +94,35 @@ export class FilterChain {
 	 */
 	async apply(url: string): Promise<boolean> {
 		for (const filter of this.filters) {
-			if (!(await filter.apply(url))) {
+			const result = await filter.applyWithReason(url);
+			if (!result.allowed) {
+				this.denials.push({
+					url,
+					reason: result.reason ?? "Unknown",
+					filter: result.filter ?? filter.name,
+				});
 				return false;
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Apply and return a detailed result with denial reason.
+	 */
+	async applyWithReason(url: string): Promise<FilterResult> {
+		for (const filter of this.filters) {
+			const result = await filter.applyWithReason(url);
+			if (!result.allowed) {
+				this.denials.push({
+					url,
+					reason: result.reason ?? "Unknown",
+					filter: result.filter ?? filter.name,
+				});
+				return result;
+			}
+		}
+		return { allowed: true };
 	}
 
 	getStats(): Record<string, FilterStats> {
@@ -75,6 +131,29 @@ export class FilterChain {
 			stats[filter.name] = filter.getStats();
 		}
 		return stats;
+	}
+
+	/**
+	 * Get all denial records (url, reason, filter name).
+	 */
+	getDenials(): Array<{ url: string; reason: string; filter: string }> {
+		return [...this.denials];
+	}
+
+	/**
+	 * Get denials grouped by filter name.
+	 */
+	getDenialsByFilter(): Record<string, Array<{ url: string; reason: string }>> {
+		const grouped: Record<string, Array<{ url: string; reason: string }>> = {};
+		for (const denial of this.denials) {
+			if (!grouped[denial.filter]) grouped[denial.filter] = [];
+			grouped[denial.filter].push({ url: denial.url, reason: denial.reason });
+		}
+		return grouped;
+	}
+
+	clearDenials(): void {
+		this.denials = [];
 	}
 }
 
@@ -85,6 +164,7 @@ export class FilterChain {
 export class URLPatternFilter extends URLFilter {
 	private includePatterns: RegExp[];
 	private excludePatterns: RegExp[];
+	private lastDenialReason = "";
 
 	constructor(
 		opts: {
@@ -98,15 +178,23 @@ export class URLPatternFilter extends URLFilter {
 	}
 
 	protected test(url: string): boolean {
-		// If exclude patterns match, reject
 		for (const pattern of this.excludePatterns) {
-			if (pattern.test(url)) return false;
+			if (pattern.test(url)) {
+				this.lastDenialReason = `Matched exclude pattern: ${pattern.source}`;
+				return false;
+			}
 		}
-		// If include patterns exist, at least one must match
 		if (this.includePatterns.length > 0) {
-			return this.includePatterns.some((p) => p.test(url));
+			if (!this.includePatterns.some((p) => p.test(url))) {
+				this.lastDenialReason = "Did not match any include pattern";
+				return false;
+			}
 		}
 		return true;
+	}
+
+	protected getDenialReason(_url: string): string {
+		return this.lastDenialReason || "Rejected by url-pattern filter";
 	}
 }
 
@@ -117,6 +205,7 @@ export class URLPatternFilter extends URLFilter {
 export class DomainFilter extends URLFilter {
 	private allowed: Set<string> | null;
 	private blocked: Set<string>;
+	private lastDenialReason = "";
 
 	constructor(
 		opts: {
@@ -134,12 +223,23 @@ export class DomainFilter extends URLFilter {
 		try {
 			domain = new URL(url).hostname.toLowerCase();
 		} catch {
+			this.lastDenialReason = "Invalid URL";
 			return false;
 		}
 
-		if (this.blocked.has(domain)) return false;
-		if (this.allowed && !this.allowed.has(domain)) return false;
+		if (this.blocked.has(domain)) {
+			this.lastDenialReason = `Domain "${domain}" is blocked`;
+			return false;
+		}
+		if (this.allowed && !this.allowed.has(domain)) {
+			this.lastDenialReason = `Domain "${domain}" is not in allowed list`;
+			return false;
+		}
 		return true;
+	}
+
+	protected getDenialReason(_url: string): string {
+		return this.lastDenialReason || "Rejected by domain filter";
 	}
 }
 
@@ -206,6 +306,7 @@ const BLOCKED_EXTENSIONS = new Set([
 export class ContentTypeFilter extends URLFilter {
 	private allowedExtensions: Set<string>;
 	private blockedExtensions: Set<string>;
+	private lastDenialReason = "";
 
 	constructor(
 		opts: {
@@ -224,9 +325,19 @@ export class ContentTypeFilter extends URLFilter {
 
 	protected test(url: string): boolean {
 		const ext = this.getExtension(url);
-		if (this.blockedExtensions.has(ext)) return false;
-		if (this.allowedExtensions.size > 0 && !this.allowedExtensions.has(ext)) return false;
+		if (this.blockedExtensions.has(ext)) {
+			this.lastDenialReason = `File extension ".${ext}" is blocked`;
+			return false;
+		}
+		if (this.allowedExtensions.size > 0 && !this.allowedExtensions.has(ext)) {
+			this.lastDenialReason = `File extension ".${ext}" is not in allowed list`;
+			return false;
+		}
 		return true;
+	}
+
+	protected getDenialReason(_url: string): string {
+		return this.lastDenialReason || "Rejected by content-type filter";
 	}
 
 	private getExtension(url: string): string {
@@ -259,6 +370,11 @@ export class MaxDepthFilter extends URLFilter {
 	protected test(url: string): boolean {
 		const depth = this.depths.get(url) ?? 0;
 		return depth <= this.maxDepth;
+	}
+
+	protected getDenialReason(url: string): string {
+		const depth = this.depths.get(url) ?? 0;
+		return `Depth ${depth} exceeds max depth ${this.maxDepth}`;
 	}
 }
 

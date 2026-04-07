@@ -88,22 +88,147 @@ export function cleanHtml(
 }
 
 /**
- * Extract metadata from HTML head.
+ * Extract comprehensive metadata from HTML (50+ fields).
+ * Covers: standard meta, Open Graph, Twitter Cards, Dublin Core,
+ * article tags, JSON-LD, favicons, feeds, and more.
  */
 export function extractMetadata(html: string): Record<string, unknown> {
 	const $ = cheerio.load(html);
+	const meta = (name: string) => $(`meta[name="${name}"]`).attr("content") ?? null;
+	const prop = (property: string) => $(`meta[property="${property}"]`).attr("content") ?? null;
+	const httpEquiv = (name: string) => $(`meta[http-equiv="${name}"]`).attr("content") ?? null;
+
 	const metadata: Record<string, unknown> = {};
 
+	// --- Standard ---
 	metadata.title = $("title").text().trim() || null;
-	metadata.description =
-		$('meta[name="description"]').attr("content") ??
-		$('meta[property="og:description"]').attr("content") ??
+	metadata.description = meta("description") ?? prop("og:description") ?? null;
+	metadata.keywords = meta("keywords");
+	metadata.author = meta("author");
+	metadata.generator = meta("generator");
+	metadata.viewport = meta("viewport");
+	metadata.themeColor = meta("theme-color");
+	metadata.robots = meta("robots");
+	metadata.googlebot = meta("googlebot");
+	metadata.rating = meta("rating");
+	metadata.referrer = meta("referrer");
+	metadata.formatDetection = meta("format-detection");
+	metadata.language = $("html").attr("lang") ?? httpEquiv("content-language") ?? null;
+	metadata.charset =
+		$("meta[charset]").attr("charset") ??
+		httpEquiv("Content-Type")?.match(/charset=([^\s;]+)/)?.[1] ??
 		null;
-	metadata.keywords = $('meta[name="keywords"]').attr("content") ?? null;
-	metadata.ogTitle = $('meta[property="og:title"]').attr("content") ?? null;
-	metadata.ogImage = $('meta[property="og:image"]').attr("content") ?? null;
+
+	// --- Canonical & Alternate ---
 	metadata.canonical = $('link[rel="canonical"]').attr("href") ?? null;
-	metadata.language = $("html").attr("lang") ?? null;
+	metadata.amphtml = $('link[rel="amphtml"]').attr("href") ?? null;
+	const alternates: Array<{ href: string; hreflang?: string; type?: string }> = [];
+	$('link[rel="alternate"]').each((_, el) => {
+		const href = $(el).attr("href");
+		if (href) {
+			alternates.push({
+				href,
+				hreflang: $(el).attr("hreflang") ?? undefined,
+				type: $(el).attr("type") ?? undefined,
+			});
+		}
+	});
+	if (alternates.length > 0) metadata.alternates = alternates;
+
+	// --- Feeds ---
+	const feeds: Array<{ href: string; type: string; title?: string }> = [];
+	$('link[type="application/rss+xml"], link[type="application/atom+xml"]').each((_, el) => {
+		const href = $(el).attr("href");
+		if (href) {
+			feeds.push({
+				href,
+				type: $(el).attr("type")!,
+				title: $(el).attr("title") ?? undefined,
+			});
+		}
+	});
+	if (feeds.length > 0) metadata.feeds = feeds;
+
+	// --- Favicons ---
+	const favicons: Array<{ href: string; sizes?: string; type?: string }> = [];
+	$('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]').each((_, el) => {
+		const href = $(el).attr("href");
+		if (href) {
+			favicons.push({
+				href,
+				sizes: $(el).attr("sizes") ?? undefined,
+				type: $(el).attr("type") ?? undefined,
+			});
+		}
+	});
+	if (favicons.length > 0) metadata.favicons = favicons;
+
+	// --- Open Graph (full) ---
+	metadata.ogTitle = prop("og:title");
+	metadata.ogDescription = prop("og:description");
+	metadata.ogImage = prop("og:image");
+	metadata.ogImageWidth = prop("og:image:width");
+	metadata.ogImageHeight = prop("og:image:height");
+	metadata.ogImageAlt = prop("og:image:alt");
+	metadata.ogUrl = prop("og:url");
+	metadata.ogType = prop("og:type");
+	metadata.ogSiteName = prop("og:site_name");
+	metadata.ogLocale = prop("og:locale");
+	metadata.ogVideo = prop("og:video");
+	metadata.ogAudio = prop("og:audio");
+
+	// --- Twitter Card ---
+	metadata.twitterCard = meta("twitter:card");
+	metadata.twitterSite = meta("twitter:site");
+	metadata.twitterCreator = meta("twitter:creator");
+	metadata.twitterTitle = meta("twitter:title");
+	metadata.twitterDescription = meta("twitter:description");
+	metadata.twitterImage = meta("twitter:image");
+	metadata.twitterImageAlt = meta("twitter:image:alt");
+
+	// --- Article ---
+	metadata.articlePublishedTime = prop("article:published_time");
+	metadata.articleModifiedTime = prop("article:modified_time");
+	metadata.articleAuthor = prop("article:author");
+	metadata.articleSection = prop("article:section");
+	const articleTags: string[] = [];
+	$('meta[property="article:tag"]').each((_, el) => {
+		const content = $(el).attr("content");
+		if (content) articleTags.push(content);
+	});
+	if (articleTags.length > 0) metadata.articleTags = articleTags;
+
+	// --- Dublin Core ---
+	metadata.dcTitle = meta("DC.title") ?? meta("dc.title");
+	metadata.dcCreator = meta("DC.creator") ?? meta("dc.creator");
+	metadata.dcSubject = meta("DC.subject") ?? meta("dc.subject");
+	metadata.dcDescription = meta("DC.description") ?? meta("dc.description");
+	metadata.dcDate = meta("DC.date") ?? meta("dc.date");
+	metadata.dcType = meta("DC.type") ?? meta("dc.type");
+	metadata.dcLanguage = meta("DC.language") ?? meta("dc.language");
+
+	// --- JSON-LD ---
+	const jsonLdScripts: unknown[] = [];
+	$('script[type="application/ld+json"]').each((_, el) => {
+		try {
+			const text = $(el).text().trim();
+			if (text) jsonLdScripts.push(JSON.parse(text));
+		} catch {
+			// malformed JSON-LD
+		}
+	});
+	if (jsonLdScripts.length > 0) metadata.jsonLd = jsonLdScripts;
+
+	// --- Misc ---
+	metadata.contentType = httpEquiv("Content-Type");
+	metadata.xUaCompatible = httpEquiv("X-UA-Compatible");
+	metadata.publishedTime = metadata.articlePublishedTime ?? meta("date") ?? meta("pubdate") ?? null;
+	metadata.modifiedTime = metadata.articleModifiedTime ?? meta("last-modified") ?? null;
+
+	// Strip null values for cleaner output
+	for (const key of Object.keys(metadata)) {
+		if (metadata[key] === null) delete metadata[key];
+	}
 
 	return metadata;
 }
