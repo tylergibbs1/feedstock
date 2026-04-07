@@ -131,6 +131,15 @@ export {
 	simulateUser,
 	withRetry,
 } from "./utils/antibot";
+export {
+	type ChangeReport,
+	type ChangeStatus,
+	ChangeTracker,
+	type ChangeTrackerConfig,
+	type DiffChunk,
+	type PageChange,
+	type TextDiff,
+} from "./utils/change-tracker";
 export { toFriendlyError, withFriendlyErrors } from "./utils/errors";
 export {
 	cleanHtml,
