@@ -9,6 +9,7 @@ export type BrowserType = "chromium" | "firefox" | "webkit";
 
 export type BrowserBackend =
 	| { kind: "playwright" }
+	| { kind: "cdp"; wsUrl: string }
 	| { kind: "lightpanda"; mode: "local"; host?: string; port?: number }
 	| { kind: "lightpanda"; mode: "cloud"; token: string; endpoint?: string };
 
@@ -65,6 +66,13 @@ export type WaitForType =
 	| { kind: "delay"; ms: number }
 	| { kind: "function"; fn: string; timeout?: number };
 
+export type ResourceBlockProfile = "fast" | "minimal" | "media-only";
+
+export type BlockResourcesConfig =
+	| boolean
+	| ResourceBlockProfile
+	| { patterns?: string[]; resourceTypes?: string[] };
+
 export interface CrawlerRunConfig {
 	// Content
 	wordCountThreshold: number;
@@ -105,8 +113,8 @@ export interface CrawlerRunConfig {
 	inlineIframes: boolean;
 
 	// Performance
-	/** Block images, CSS, fonts, and media during crawl for faster page loads */
-	blockResources: boolean;
+	/** Block resources during crawl. Boolean for backward compat, or a profile name, or custom config. */
+	blockResources: BlockResourcesConfig;
 
 	// Anti-bot
 	simulateUser: boolean;

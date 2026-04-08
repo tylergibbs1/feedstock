@@ -16,23 +16,27 @@ src/
 ├── index.ts              # Public API exports
 ├── crawler.ts            # Main WebCrawler class
 ├── config.ts             # BrowserConfig, CrawlerRunConfig
+├── config-loader.ts      # Layered config: feedstock.json + FEEDSTOCK_* env vars
 ├── models.ts             # CrawlResult, CrawlResponse, etc.
 ├── browser/
-│   └── manager.ts        # Browser lifecycle & session management
+│   └── manager.ts        # Browser lifecycle, session management, retry with backoff
 ├── strategies/
 │   ├── crawler-strategy.ts    # Playwright-based page fetching
 │   ├── scraping-strategy.ts   # HTML → clean content + links/media
 │   ├── markdown.ts            # HTML → Markdown conversion
 │   └── extraction/
 │       ├── base.ts            # ExtractionStrategy interface
+│       ├── accessibility.ts   # Accessibility tree extraction
 │       ├── css.ts             # CSS selector extraction
 │       └── regex.ts           # Regex extraction
 ├── cache/
 │   ├── mode.ts           # CacheMode enum
-│   └── database.ts       # bun:sqlite cache layer
+│   └── database.ts       # bun:sqlite cache layer with content hashing
 └── utils/
     ├── logger.ts         # Logging
-    └── html.ts           # HTML utilities
+    ├── html.ts           # HTML utilities
+    ├── cursor-interactive.ts  # Cursor-based interactive element detection
+    └── resource-blocker.ts    # Resource blocking profiles (fast/minimal/media-only)
 ```
 
 ## Commands
@@ -45,6 +49,7 @@ src/
 ## Browser Backends
 
 - **Playwright** (default) — launches Chromium/Firefox/WebKit locally
+- **CDP** — connects to any browser via CDP WebSocket (Browserbase, Browserless, etc.)
 - **Lightpanda local** — launches `@lightpanda/browser` and connects via CDP
 - **Lightpanda cloud** — connects to Lightpanda Cloud via CDP WebSocket
 
@@ -53,12 +58,28 @@ Set via `backend` in `BrowserConfig`:
 // Playwright (default)
 createBrowserConfig({ backend: { kind: "playwright" } })
 
+// Generic CDP (any cloud provider)
+createBrowserConfig({ backend: { kind: "cdp", wsUrl: "ws://..." } })
+
 // Lightpanda local
 createBrowserConfig({ backend: { kind: "lightpanda", mode: "local" } })
 
 // Lightpanda cloud
 createBrowserConfig({ backend: { kind: "lightpanda", mode: "cloud", token: "..." } })
 ```
+
+## Configuration
+
+Config can be set programmatically, via `feedstock.json` project file, or via `FEEDSTOCK_*` env vars. Precedence: programmatic > env vars > project file > defaults.
+
+```typescript
+import { loadConfig, createBrowserConfig, createCrawlerRunConfig } from "feedstock";
+
+const layered = loadConfig(); // loads feedstock.json + env vars
+const browserConfig = createBrowserConfig({ ...layered.browser, ...myOverrides });
+```
+
+Key env vars: `FEEDSTOCK_CDP_URL`, `FEEDSTOCK_HEADLESS`, `FEEDSTOCK_PROXY`, `FEEDSTOCK_BLOCK_RESOURCES`, `FEEDSTOCK_PAGE_TIMEOUT`
 
 ## Conventions
 

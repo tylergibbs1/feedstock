@@ -12,7 +12,7 @@
 
 - **Single & multi-page crawling** with concurrent execution
 - **Deep crawling** — BFS, DFS, and BestFirst traversal strategies
-- **Content extraction** — CSS selectors, regex, XPath, table extraction
+- **Content extraction** — CSS selectors, regex, XPath, table, and accessibility tree extraction
 - **Markdown generation** with citation support
 - **Smart caching** with ETag/Last-Modified validation via `bun:sqlite`
 - **URL filtering** — pattern, domain, and content-type filters
@@ -21,7 +21,7 @@
 - **Robots.txt** parsing and compliance
 - **Built-in stealth mode** — one flag enables random user-agents, navigator.webdriver override, plugin/language spoofing, human-like mouse/scroll simulation
 - **Anti-bot detection** with auto-retry on blocked pages
-- **Multiple browser backends** — Playwright (Chromium/Firefox/WebKit) or [Lightpanda](https://lightpanda.io) (local/cloud)
+- **Multiple browser backends** — Playwright (Chromium/Firefox/WebKit), generic CDP (Browserbase, Browserless, etc.), or [Lightpanda](https://lightpanda.io) (local/cloud)
 - **Proxy rotation** — round-robin strategy with health tracking
 - **URL seeding** — discover URLs from sitemaps
 - **Accessibility snapshots** — compact semantic page representation with `@e` refs for AI consumption
@@ -32,7 +32,7 @@
 - **Storage state persistence** — save/load cookies and localStorage between sessions
 - **AI-friendly errors** — converts 20+ error patterns into actionable messages
 - **Hooks** — inject custom behavior at 5 lifecycle points (page created, before/after navigation, etc.)
-- **Resource blocking** — abort images, CSS, fonts, and media for faster content-only crawls
+- **Resource blocking** — named profiles (`fast`, `minimal`, `media-only`) or custom patterns for faster crawls
 - **Navigation strategies** — configurable `waitUntil`: `commit` (fastest), `domcontentloaded`, `load`, `networkidle`
 - **In-page extraction** — extract links/media/metadata directly in the browser via `page.evaluate()`, skipping HTML serialization
 - **Change tracking** — detect new/changed/unchanged/removed pages between crawl runs with text diffs
@@ -40,6 +40,9 @@
 - **Graceful shutdown** — SIGINT/SIGTERM handlers auto-close browser processes
 - **Session management** — LRU eviction at 20 concurrent sessions, cache TTL pruning
 - **Input validation** — friendly error messages for invalid URLs, automatic retry on transient network errors
+- **Layered config** — `feedstock.json` project file + `FEEDSTOCK_*` environment variables with programmatic overrides
+- **Incremental crawling** — content hashing in cache detects unchanged pages via `cache.hasChanged()`
+- **Benchmarking** — scenario-based benchmark suite with warmup, p50/stddev stats, and JSON output
 - **Crawler monitoring** — real-time stats tracking (pages/sec, success rates, data volume)
 - **Configurable logging** — pluggable Logger interface with ConsoleLogger and SilentLogger
 
@@ -168,6 +171,16 @@ const crawler = new WebCrawler({
 });
 ```
 
+### Generic CDP (any cloud provider)
+
+```typescript
+const crawler = new WebCrawler({
+  config: {
+    backend: { kind: "cdp", wsUrl: "wss://cloud.browserbase.com/v1/sessions/..." },
+  },
+});
+```
+
 ### Lightpanda
 
 ```typescript
@@ -261,8 +274,22 @@ new BM25ContentFilter({ threshold: 0.1 }).filter(content, "TypeScript crawler");
 ## Resource Blocking & Fast Navigation
 
 ```typescript
-// Block images/CSS/fonts for content-only crawl
-const result = await crawler.crawl("https://example.com", {
+// Named profile — block images, fonts, and media (keeps CSS/JS)
+await crawler.crawl(url, { blockResources: "fast" });
+
+// Block everything except HTML and JS
+await crawler.crawl(url, { blockResources: "minimal" });
+
+// Block only heavy media (images, video, audio)
+await crawler.crawl(url, { blockResources: "media-only" });
+
+// Custom — block specific patterns and resource types
+await crawler.crawl(url, {
+  blockResources: { patterns: ["**/*.woff2"], resourceTypes: ["font"] },
+});
+
+// Boolean still works (true = "fast" profile)
+await crawler.crawl(url, {
   blockResources: true,
   navigationWaitUntil: "commit", // fastest — returns as soon as server responds
 });
@@ -369,6 +396,45 @@ await saveStorageState(page.context());
 const state = loadStorageState();
 ```
 
+## Layered Configuration
+
+Config is loaded from multiple sources with clear precedence: programmatic > env vars > project file > defaults.
+
+```typescript
+import { loadConfig, createBrowserConfig, createCrawlerRunConfig } from "feedstock";
+
+// Automatically finds feedstock.json in cwd or parent directories
+const layered = loadConfig();
+const browserConfig = createBrowserConfig({ ...layered.browser, headless: false });
+const crawlConfig = createCrawlerRunConfig({ ...layered.crawl });
+```
+
+**feedstock.json:**
+```json
+{
+  "browser": { "headless": true, "stealth": true },
+  "crawl": { "blockResources": "fast", "pageTimeout": 30000 }
+}
+```
+
+**Environment variables:** `FEEDSTOCK_CDP_URL`, `FEEDSTOCK_HEADLESS`, `FEEDSTOCK_PROXY`, `FEEDSTOCK_BLOCK_RESOURCES`, `FEEDSTOCK_PAGE_TIMEOUT`, `FEEDSTOCK_SCREENSHOT`, `FEEDSTOCK_GENERATE_MARKDOWN`, etc.
+
+## Accessibility Extraction
+
+Extract semantic content using the accessibility tree — headings, links, buttons, inputs:
+
+```typescript
+const result = await crawler.crawl("https://example.com", {
+  extractionStrategy: {
+    type: "accessibility",
+    params: { roles: ["heading", "link"] }, // optional filter
+  },
+});
+
+const items = JSON.parse(result.extractedContent!);
+// [{ content: "Page Title", metadata: { role: "heading", ref: "e1", level: 1 } }, ...]
+```
+
 ## Process HTML Without Browser
 
 ```typescript
@@ -386,7 +452,7 @@ Full documentation at [usefeedstock.com](https://www.usefeedstock.com/).
 
 ```bash
 bun install
-bun test              # 284 tests
+bun test              # 325 tests
 bun test tests/unit   # unit tests only
 bun run typecheck     # tsc --noEmit
 bun run lint          # biome check

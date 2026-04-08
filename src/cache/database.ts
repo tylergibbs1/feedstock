@@ -12,6 +12,16 @@ class CacheRow {
 	cached_at!: number;
 	etag!: string | null;
 	last_modified!: string | null;
+	content_hash!: string | null;
+}
+
+/**
+ * Compute a SHA-256 hash of content for change detection.
+ */
+export function contentHash(content: string): string {
+	const hasher = new Bun.CryptoHasher("sha256");
+	hasher.update(content);
+	return hasher.digest("hex");
 }
 
 /**
@@ -40,44 +50,70 @@ export class CrawlCache {
         result TEXT NOT NULL,
         cached_at REAL NOT NULL,
         etag TEXT,
-        last_modified TEXT
+        last_modified TEXT,
+        content_hash TEXT
       )
     `);
+
+		// Migrate older schemas that lack the content_hash column
+		this.migrateSchema();
 	}
 
-	get(url: string): { result: string; cachedAt: number } | null {
+	private migrateSchema(): void {
+		const columns = this.db.query("PRAGMA table_info(crawl_cache)").all() as Array<{ name: string }>;
+		const colNames = new Set(columns.map((c) => c.name));
+
+		if (!colNames.has("content_hash")) {
+			this.db.run("ALTER TABLE crawl_cache ADD COLUMN content_hash TEXT");
+		}
+	}
+
+	get(url: string): { result: string; cachedAt: number; contentHash: string | null } | null {
 		const row = this.db
-			.query("SELECT result, cached_at FROM crawl_cache WHERE url = ?")
+			.query("SELECT result, cached_at, content_hash FROM crawl_cache WHERE url = ?")
 			.as(CacheRow)
 			.get(url);
 		if (!row) return null;
-		return { result: row.result, cachedAt: row.cached_at };
+		return { result: row.result, cachedAt: row.cached_at, contentHash: row.content_hash };
 	}
 
-	set(url: string, result: string, opts: { etag?: string; lastModified?: string } = {}): void {
+	set(url: string, result: string, opts: { etag?: string; lastModified?: string; contentHash?: string } = {}): void {
 		this.db
 			.query(
-				`INSERT OR REPLACE INTO crawl_cache (url, result, cached_at, etag, last_modified)
-         VALUES (?, ?, ?, ?, ?)`,
+				`INSERT OR REPLACE INTO crawl_cache (url, result, cached_at, etag, last_modified, content_hash)
+         VALUES (?, ?, ?, ?, ?, ?)`,
 			)
-			.run(url, result, Date.now() / 1000, opts.etag ?? null, opts.lastModified ?? null);
+			.run(url, result, Date.now() / 1000, opts.etag ?? null, opts.lastModified ?? null, opts.contentHash ?? null);
 	}
 
 	setMany(
-		entries: Array<{ url: string; result: string; etag?: string; lastModified?: string }>,
+		entries: Array<{ url: string; result: string; etag?: string; lastModified?: string; contentHash?: string }>,
 	): void {
 		const insert = this.db.transaction((items: typeof entries) => {
 			const stmt = this.db.query(
-				`INSERT OR REPLACE INTO crawl_cache (url, result, cached_at, etag, last_modified)
-           VALUES (?, ?, ?, ?, ?)`,
+				`INSERT OR REPLACE INTO crawl_cache (url, result, cached_at, etag, last_modified, content_hash)
+           VALUES (?, ?, ?, ?, ?, ?)`,
 			);
 			const now = Date.now() / 1000;
 			for (const item of items) {
-				stmt.run(item.url, item.result, now, item.etag ?? null, item.lastModified ?? null);
+				stmt.run(item.url, item.result, now, item.etag ?? null, item.lastModified ?? null, item.contentHash ?? null);
 			}
 			return items.length;
 		});
 		insert(entries);
+	}
+
+	/**
+	 * Check if content has changed by comparing hash.
+	 * Returns true if the content is new or different from cached.
+	 */
+	hasChanged(url: string, contentHash: string): boolean {
+		const row = this.db
+			.query("SELECT content_hash FROM crawl_cache WHERE url = ?")
+			.as(CacheRow)
+			.get(url);
+		if (!row) return true; // New URL = changed
+		return row.content_hash !== contentHash;
 	}
 
 	delete(url: string): void {

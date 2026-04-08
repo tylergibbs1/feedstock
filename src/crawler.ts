@@ -1,4 +1,4 @@
-import { CrawlCache } from "./cache/database";
+import { contentHash, CrawlCache } from "./cache/database";
 import { shouldReadCache, shouldWriteCache } from "./cache/mode";
 import type { BrowserConfig, CrawlerRunConfig } from "./config";
 import { createBrowserConfig, createCrawlerRunConfig } from "./config";
@@ -21,6 +21,7 @@ import {
 	type HookType,
 	PlaywrightCrawlerStrategy,
 } from "./strategies/crawler-strategy";
+import { type AccessibilityExtractionConfig, AccessibilityExtractionStrategy } from "./strategies/extraction/accessibility";
 import { type ExtractionStrategy, NoExtractionStrategy } from "./strategies/extraction/base";
 import { type CssExtractionSchema, CssExtractionStrategy } from "./strategies/extraction/css";
 import { RegexExtractionStrategy } from "./strategies/extraction/regex";
@@ -259,7 +260,9 @@ export class WebCrawler {
 
 			// Write to cache
 			if (shouldWriteCache(runConfig.cacheMode) && this.cache) {
-				this.cache.set(url, JSON.stringify(result));
+				this.cache.set(url, JSON.stringify(result), {
+						contentHash: contentHash(result.cleanedHtml ?? result.html),
+					});
 			}
 
 			return result;
@@ -410,6 +413,10 @@ export class WebCrawler {
 				return new CssExtractionStrategy(config.params as unknown as CssExtractionSchema);
 			case "regex":
 				return new RegexExtractionStrategy(config.params.patterns as (string | RegExp)[]);
+			case "accessibility":
+				return new AccessibilityExtractionStrategy(
+					config.params as unknown as AccessibilityExtractionConfig,
+				);
 			default:
 				return new NoExtractionStrategy();
 		}

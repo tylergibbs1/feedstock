@@ -13,6 +13,23 @@ import type { Logger } from "../utils/logger";
 import { SilentLogger } from "../utils/logger";
 import { getRandomUserAgent } from "../utils/user-agents";
 
+/** Errors that indicate a transient connection failure worth retrying. */
+const TRANSIENT_PATTERNS = [
+	"ECONNREFUSED",
+	"ECONNRESET",
+	"ETIMEDOUT",
+	"EPIPE",
+	"WebSocket error",
+	"Target closed",
+	"browser has been closed",
+	"Navigation failed",
+];
+
+function isTransientError(err: unknown): boolean {
+	const msg = err instanceof Error ? err.message : String(err);
+	return TRANSIENT_PATTERNS.some((p) => msg.includes(p));
+}
+
 const BROWSER_LAUNCHERS: Record<BrowserType, PlaywrightBrowserType> = {
 	chromium,
 	firefox,
@@ -40,16 +57,69 @@ export class BrowserManager {
 		this.logger = config.logger ?? new SilentLogger();
 	}
 
-	async start(): Promise<void> {
+	async start(opts: { maxRetries?: number; baseDelayMs?: number } = {}): Promise<void> {
 		if (this.browser) return;
 
-		const backend = this.config.backend;
+		const maxRetries = opts.maxRetries ?? 3;
+		const baseDelay = opts.baseDelayMs ?? 500;
 
-		if (backend.kind === "lightpanda") {
-			await this.startLightpanda(backend);
-		} else {
-			await this.startPlaywright();
+		for (let attempt = 0; ; attempt++) {
+			try {
+				const backend = this.config.backend;
+				if (backend.kind === "cdp") {
+					await this.startCDP(backend);
+				} else if (backend.kind === "lightpanda") {
+					await this.startLightpanda(backend);
+				} else {
+					await this.startPlaywright();
+				}
+				return;
+			} catch (err) {
+				// Clean up any partially-started resources before retrying
+				await this.cleanupFailedStart();
+
+				if (attempt < maxRetries && isTransientError(err)) {
+					const delay = Math.min(baseDelay * 2 ** attempt, 30_000);
+					this.logger.warn(
+						`Browser start failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms`,
+						{ error: err instanceof Error ? err.message : String(err) },
+					);
+					await new Promise((r) => setTimeout(r, delay));
+					continue;
+				}
+				throw err;
+			}
 		}
+	}
+
+	/**
+	 * Clean up partially-started resources after a failed start attempt.
+	 * Kills any spawned Lightpanda process and resets browser state
+	 * so the next retry starts fresh.
+	 */
+	private async cleanupFailedStart(): Promise<void> {
+		if (this.browser) {
+			try {
+				await this.browser.close();
+			} catch {
+				// May already be dead
+			}
+			this.browser = null;
+		}
+
+		if (this.lightpandaProcess) {
+			this.lightpandaProcess.kill();
+			this.lightpandaProcess = null;
+			this.logger.debug("Cleaned up Lightpanda process from failed start attempt");
+		}
+	}
+
+	private async startCDP(
+		backend: Extract<BrowserConfig["backend"], { kind: "cdp" }>,
+	): Promise<void> {
+		this.logger.info("Connecting via CDP", { wsUrl: backend.wsUrl });
+		this.browser = await chromium.connectOverCDP(backend.wsUrl);
+		this.logger.info("Connected via CDP");
 	}
 
 	private async startPlaywright(): Promise<void> {
@@ -81,7 +151,9 @@ export class BrowserManager {
 
 			this.lightpandaProcess = await launchLightpanda({ host, port });
 			endpointURL = `ws://${host}:${port}`;
-			this.logger.info("Launched local Lightpanda", { host, port });
+			this.logger.info("Launched local Lightpanda, waiting for CDP ready", { host, port });
+			await waitForCDPReady(endpointURL);
+			this.logger.info("Lightpanda CDP endpoint ready", { host, port });
 		}
 
 		this.browser = await chromium.connectOverCDP(endpointURL);
@@ -189,6 +261,38 @@ export class BrowserManager {
 
 interface LightpandaProcess {
 	kill(): void;
+}
+
+/**
+ * Poll a CDP endpoint until it responds or timeout is reached.
+ * Prevents race conditions when connecting to a freshly-launched browser.
+ */
+async function waitForCDPReady(
+	endpoint: string,
+	opts: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<void> {
+	const timeout = opts.timeoutMs ?? 10_000;
+	const interval = opts.intervalMs ?? 200;
+	const deadline = Date.now() + timeout;
+
+	// Convert ws:// to http:// for the version endpoint
+	const httpUrl = endpoint.replace(/^ws:\/\//, "http://").replace(/^wss:\/\//, "https://");
+	const versionUrl = `${httpUrl}/json/version`;
+
+	while (Date.now() < deadline) {
+		try {
+			const response = await fetch(versionUrl, { signal: AbortSignal.timeout(1000) });
+			if (response.ok) return;
+		} catch {
+			// Not ready yet
+		}
+		await new Promise((r) => setTimeout(r, interval));
+	}
+
+	throw new Error(
+		`CDP endpoint ${endpoint} not ready after ${timeout}ms. ` +
+			`The browser process may have failed to start.`,
+	);
 }
 
 async function launchLightpanda(opts: { host: string; port: number }): Promise<LightpandaProcess> {
