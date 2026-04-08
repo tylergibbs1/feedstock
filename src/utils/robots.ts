@@ -199,24 +199,14 @@ function emptyDirectives(): RobotsDirectives {
  * Supports * (wildcard) and $ (end anchor).
  */
 function pathToRegex(pattern: string): RegExp {
-	let regex = "^";
-	let i = 0;
-
-	while (i < pattern.length) {
-		const char = pattern[i];
-		if (char === "*") {
-			regex += ".*";
-		} else if (char === "$" && i === pattern.length - 1) {
-			regex += "$";
-		} else {
-			regex += escapeRegex(char);
-		}
-		i++;
+	// Escape all regex-special chars first, then convert robots.txt wildcards
+	const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+	let regex = `^${escaped}`;
+	// Convert * to .* (after escaping, * is not escaped since it's our wildcard)
+	regex = regex.replace(/\*/g, ".*");
+	// Convert trailing \$ back to real $ anchor
+	if (regex.endsWith("\\$")) {
+		regex = `${regex.slice(0, -2)}$`;
 	}
-
 	return new RegExp(regex);
-}
-
-function escapeRegex(char: string): string {
-	return char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
