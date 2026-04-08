@@ -4,6 +4,9 @@
   "description": "High-performance web crawler and scraper for TypeScript, powered by Bun and Playwright",
   "type": "module",
   "main": "src/index.ts",
+  "bin": {
+    "feedstock": "src/cli/index.ts"
+  },
   "exports": {
     ".": {
       "types": "./src/index.ts",
