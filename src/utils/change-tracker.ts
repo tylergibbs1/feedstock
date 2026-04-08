@@ -385,8 +385,8 @@ function computeLCS(oldLines: string[], newLines: string[]): Array<[number, numb
 	const m = oldLines.length;
 	const n = newLines.length;
 
-	// For very large diffs, use a simpler approach
-	if (m * n > 1_000_000) {
+	// Use fast hash-based approach for most real-world pages
+	if (m * n > 10_000) {
 		return simpleLCS(oldLines, newLines);
 	}
 
