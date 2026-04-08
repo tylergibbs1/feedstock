@@ -34,7 +34,7 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 	} catch {}
 
 	let titleText = "";
-	let inTitle = false;
+	const _inTitle = false;
 
 	// Collect JSON-LD scripts
 	const jsonLdScripts: unknown[] = [];
@@ -85,7 +85,6 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 				else if (name === "robots") metadata.robots = content;
 				else if (name === "googlebot") metadata.googlebot = content;
 				else if (name === "referrer") metadata.referrer = content;
-
 				// OG
 				else if (property === "og:title") metadata.ogTitle = content;
 				else if (property === "og:description") {
@@ -98,21 +97,18 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 				else if (property === "og:type") metadata.ogType = content;
 				else if (property === "og:site_name") metadata.ogSiteName = content;
 				else if (property === "og:locale") metadata.ogLocale = content;
-
 				// Twitter
 				else if (name === "twitter:card") metadata.twitterCard = content;
 				else if (name === "twitter:site") metadata.twitterSite = content;
 				else if (name === "twitter:creator") metadata.twitterCreator = content;
 				else if (name === "twitter:title") metadata.twitterTitle = content;
 				else if (name === "twitter:image") metadata.twitterImage = content;
-
 				// Article
 				else if (property === "article:published_time") metadata.articlePublishedTime = content;
 				else if (property === "article:modified_time") metadata.articleModifiedTime = content;
 				else if (property === "article:author") metadata.articleAuthor = content;
 				else if (property === "article:section") metadata.articleSection = content;
 				else if (property === "article:tag") articleTags.push(content);
-
 				// Dublin Core
 				else if (name === "dc.title" || name === "dc:title") metadata.dcTitle = content;
 				else if (name === "dc.creator" || name === "dc:creator") metadata.dcCreator = content;
@@ -279,7 +275,12 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 
 	function processLink() {
 		const href = currentLinkHref;
-		if (!href || href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:"))
+		if (
+			!href ||
+			href.startsWith("#") ||
+			href.startsWith("javascript:") ||
+			href.startsWith("mailto:")
+		)
 			return;
 
 		let absoluteUrl: string;
@@ -297,7 +298,12 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 			linkDomain = "";
 		}
 
-		const link: LinkData = { href: absoluteUrl, text, title: currentLinkTitle.trim(), baseDomain: linkDomain };
+		const link: LinkData = {
+			href: absoluteUrl,
+			text,
+			title: currentLinkTitle.trim(),
+			baseDomain: linkDomain,
+		};
 
 		if (linkDomain === baseDomain) {
 			internal.push(link);

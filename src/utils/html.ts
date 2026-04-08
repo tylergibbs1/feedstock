@@ -1,5 +1,5 @@
-import * as cheerio from "cheerio";
 import type { CheerioAPI } from "cheerio";
+import * as cheerio from "cheerio";
 import { extractAllStreaming } from "./html-rewriter";
 
 const NOISE_TAGS = new Set(["script", "style", "noscript", "svg", "path", "iframe", "head"]);
@@ -83,7 +83,6 @@ function cleanHtmlWith(
 		removeOverlayElements?: boolean;
 	} = {},
 ): string {
-
 	// Remove noise tags
 	const tagsToRemove = new Set([...NOISE_TAGS, ...(opts.excludeTags ?? [])]);
 	for (const tag of tagsToRemove) {

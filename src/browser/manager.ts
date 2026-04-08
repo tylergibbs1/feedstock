@@ -101,6 +101,7 @@ export class BrowserManager {
 			viewport: this.config.viewport,
 			ignoreHTTPSErrors: this.config.ignoreHttpsErrors,
 			javaScriptEnabled: this.config.javaEnabled,
+			serviceWorkers: "block",
 			...(this.config.userAgent && { userAgent: this.config.userAgent }),
 		});
 

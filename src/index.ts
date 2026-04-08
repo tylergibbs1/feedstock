@@ -148,7 +148,9 @@ export {
 	extractMetadata,
 	scrapeAll,
 } from "./utils/html";
+export { extractAllStreaming } from "./utils/html-rewriter";
 export { extractIframeContent, type InlinedIframe, inlineIframeContent } from "./utils/iframe";
+export { extractInPage, type InPageExtractionResult } from "./utils/in-page-extract";
 export { detectInteractiveElements } from "./utils/interactive";
 // Utils
 export {

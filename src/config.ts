@@ -77,6 +77,8 @@ export interface CrawlerRunConfig {
 	waitFor: WaitForType | null;
 	waitAfterLoad: number;
 	pageTimeout: number;
+	/** Navigation wait strategy: "domcontentloaded" (default), "load", "networkidle", or "commit" (fastest) */
+	navigationWaitUntil: "domcontentloaded" | "load" | "networkidle" | "commit";
 
 	// Capture
 	screenshot: boolean;
@@ -126,6 +128,7 @@ const DEFAULT_CRAWLER_RUN_CONFIG: CrawlerRunConfig = {
 	waitFor: null,
 	waitAfterLoad: 0,
 	pageTimeout: 60_000,
+	navigationWaitUntil: "domcontentloaded",
 
 	screenshot: false,
 	pdf: false,

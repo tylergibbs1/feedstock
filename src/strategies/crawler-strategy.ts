@@ -91,13 +91,14 @@ export class PlaywrightCrawlerStrategy extends CrawlerStrategy {
 			});
 		}
 
-		// Block unnecessary resources for faster page loads
+		// Block unnecessary resources at context level for faster page loads
 		if (config.blockResources) {
-			await page.route(
+			const ctx = page.context();
+			await ctx.route(
 				"**/*.{png,jpg,jpeg,gif,webp,avif,svg,ico,woff,woff2,ttf,eot,mp4,mp3,avi,mov}",
 				(route) => route.abort(),
 			);
-			await page.route("**/*", (route) => {
+			await ctx.route("**/*", (route) => {
 				const type = route.request().resourceType();
 				if (type === "stylesheet" || type === "font" || type === "media") {
 					return route.abort();
@@ -113,7 +114,7 @@ export class PlaywrightCrawlerStrategy extends CrawlerStrategy {
 
 		this.logger.info(`Navigating to ${url}`);
 		const response = await page.goto(url, {
-			waitUntil: "domcontentloaded",
+			waitUntil: config.navigationWaitUntil,
 			timeout: config.pageTimeout,
 		});
 
