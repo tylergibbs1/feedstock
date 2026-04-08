@@ -23,9 +23,12 @@ interface ManagedSession {
 	createdAt: number;
 }
 
+const MAX_SESSIONS = 20;
+
 export class BrowserManager {
 	private browser: Browser | null = null;
 	private sessions = new Map<string, ManagedSession>();
+	private sessionOrder: string[] = []; // LRU tracking
 	private config: BrowserConfig;
 	private logger: Logger;
 	private lightpandaProcess: LightpandaProcess | null = null;
@@ -93,7 +96,19 @@ export class BrowserManager {
 		// Return existing session if available
 		const existing = this.sessions.get(sid);
 		if (existing) {
+			// Move to end of LRU order
+			this.sessionOrder = this.sessionOrder.filter((s) => s !== sid);
+			this.sessionOrder.push(sid);
 			return { page: existing.page, sessionId: sid };
+		}
+
+		// Evict oldest session if at capacity
+		if (this.sessions.size >= MAX_SESSIONS) {
+			const oldest = this.sessionOrder.shift();
+			if (oldest) {
+				this.logger.debug(`Evicting oldest session ${oldest} (max ${MAX_SESSIONS})`);
+				await this.killSession(oldest);
+			}
 		}
 
 		// Create new context and page
@@ -107,6 +122,7 @@ export class BrowserManager {
 
 		const page = await context.newPage();
 		this.sessions.set(sid, { context, page, createdAt: Date.now() });
+		this.sessionOrder.push(sid);
 		this.logger.debug(`Created session ${sid}`);
 
 		return { page, sessionId: sid };
@@ -115,6 +131,8 @@ export class BrowserManager {
 	async killSession(sessionId: string): Promise<void> {
 		const session = this.sessions.get(sessionId);
 		if (!session) return;
+
+		this.sessionOrder = this.sessionOrder.filter((s) => s !== sessionId);
 
 		try {
 			await session.page.close();

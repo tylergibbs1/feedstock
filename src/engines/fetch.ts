@@ -1,11 +1,16 @@
 /**
  * Lightweight fetch engine — simple HTTP request without a browser.
  * Fastest option, works for static pages that don't need JS rendering.
+ * Retries transient network errors (ECONNRESET, ETIMEDOUT, etc.).
  */
 
 import type { CrawlerRunConfig } from "../config";
 import type { CrawlResponse } from "../models";
 import { Engine, type EngineCapabilities } from "./base";
+
+const TRANSIENT_ERRORS = ["ECONNRESET", "ETIMEDOUT", "EPIPE", "UND_ERR_SOCKET", "fetch failed"];
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 500;
 
 export class FetchEngine extends Engine {
 	readonly name = "fetch";
@@ -27,15 +32,32 @@ export class FetchEngine extends Engine {
 		this.userAgent = opts.userAgent ?? "feedstock/1.0";
 	}
 
-	async start(): Promise<void> {
-		// No-op — fetch doesn't need initialization
-	}
-
-	async close(): Promise<void> {
-		// No-op
-	}
+	async start(): Promise<void> {}
+	async close(): Promise<void> {}
 
 	async fetch(url: string, config: CrawlerRunConfig): Promise<CrawlResponse> {
+		let lastError: Error | null = null;
+
+		for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+			try {
+				return await this.doFetch(url, config);
+			} catch (err) {
+				lastError = err instanceof Error ? err : new Error(String(err));
+				const msg = lastError.message;
+
+				// Only retry transient network errors
+				if (attempt < MAX_RETRIES && TRANSIENT_ERRORS.some((e) => msg.includes(e))) {
+					await new Promise((r) => setTimeout(r, RETRY_DELAY * (attempt + 1)));
+					continue;
+				}
+				throw lastError;
+			}
+		}
+
+		throw lastError!;
+	}
+
+	private async doFetch(url: string, config: CrawlerRunConfig): Promise<CrawlResponse> {
 		const response = await globalThis.fetch(url, {
 			headers: {
 				"User-Agent": this.userAgent,

@@ -88,6 +88,26 @@ export class CrawlCache {
 		this.db.query("DELETE FROM crawl_cache").run();
 	}
 
+	/**
+	 * Remove entries older than maxAgeMs milliseconds.
+	 * Returns number of entries removed.
+	 */
+	pruneOlderThan(maxAgeMs: number): number {
+		const cutoff = (Date.now() - maxAgeMs) / 1000;
+		const result = this.db.query("DELETE FROM crawl_cache WHERE cached_at < ?").run(cutoff);
+		return result.changes;
+	}
+
+	/**
+	 * Get the number of cached entries.
+	 */
+	get size(): number {
+		const row = this.db.query("SELECT COUNT(*) as count FROM crawl_cache").get() as {
+			count: number;
+		};
+		return row.count;
+	}
+
 	close(): void {
 		this.db.close();
 	}

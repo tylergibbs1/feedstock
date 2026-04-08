@@ -152,6 +152,7 @@ export { extractAllStreaming } from "./utils/html-rewriter";
 export { extractIframeContent, type InlinedIframe, inlineIframeContent } from "./utils/iframe";
 export { extractInPage, type InPageExtractionResult } from "./utils/in-page-extract";
 export { detectInteractiveElements } from "./utils/interactive";
+export { detectInteractiveElementsStatic } from "./utils/interactive-static";
 // Utils
 export {
 	ConsoleLogger,
@@ -171,3 +172,4 @@ export {
 	saveStorageState,
 } from "./utils/storage";
 export { type SeedResult, URLSeeder } from "./utils/url-seeder";
+export { getRandomUserAgent, UserAgentRotator } from "./utils/user-agents";

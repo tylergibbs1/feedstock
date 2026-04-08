@@ -30,6 +30,7 @@ import {
 	type ContentScrapingStrategy,
 } from "./strategies/scraping-strategy";
 import { toFriendlyError } from "./utils/errors";
+import { detectInteractiveElementsStatic } from "./utils/interactive-static";
 import type { Logger } from "./utils/logger";
 import { ConsoleLogger, SilentLogger } from "./utils/logger";
 
@@ -58,6 +59,27 @@ export interface WebCrawlerOptions {
 // WebCrawler
 // ---------------------------------------------------------------------------
 
+/**
+ * Main entry point for feedstock. Manages browser lifecycle, caching,
+ * scraping, and extraction.
+ *
+ * @example
+ * ```ts
+ * const crawler = new WebCrawler();
+ * const result = await crawler.crawl("https://example.com");
+ * console.log(result.markdown?.rawMarkdown);
+ * await crawler.close();
+ * ```
+ *
+ * @example
+ * ```ts
+ * // With configuration
+ * const crawler = new WebCrawler({
+ *   config: { headless: true, browserType: "chromium" },
+ *   verbose: true,
+ * });
+ * ```
+ */
 export class WebCrawler {
 	private strategy: CrawlerStrategy | null;
 	private engineManager: EngineManager | null;
@@ -67,6 +89,7 @@ export class WebCrawler {
 	private logger: Logger;
 	private browserConfig: BrowserConfig;
 	private ready = false;
+	private shutdownHandler: (() => void) | null = null;
 
 	constructor(opts: WebCrawlerOptions = {}) {
 		const verbose = opts.verbose ?? false;
@@ -107,6 +130,13 @@ export class WebCrawler {
 		} else if (this.strategy) {
 			await this.strategy.start();
 		}
+
+		// Graceful shutdown on process exit
+		this.shutdownHandler = () => {
+			this.close().catch(() => {});
+		};
+		process.on("SIGINT", this.shutdownHandler);
+		process.on("SIGTERM", this.shutdownHandler);
 		this.cache = new CrawlCache();
 		this.ready = true;
 		this.logger.info("Crawler started");
@@ -114,6 +144,14 @@ export class WebCrawler {
 
 	async close(): Promise<void> {
 		if (!this.ready) return;
+
+		// Remove shutdown handlers
+		if (this.shutdownHandler) {
+			process.removeListener("SIGINT", this.shutdownHandler);
+			process.removeListener("SIGTERM", this.shutdownHandler);
+			this.shutdownHandler = null;
+		}
+
 		if (this.engineManager) {
 			await this.engineManager.close();
 		} else if (this.strategy) {
@@ -140,6 +178,12 @@ export class WebCrawler {
 	// -------------------------------------------------------------------------
 
 	async crawl(url: string, config?: Partial<CrawlerRunConfig>): Promise<CrawlResult> {
+		try {
+			validateUrl(url);
+		} catch (err) {
+			return createErrorResult(url ?? "", toFriendlyError(err));
+		}
+
 		if (!this.ready) {
 			await this.start();
 		}
@@ -298,7 +342,9 @@ export class WebCrawler {
 			consoleMessages: null,
 			sessionId: null,
 			snapshot: runConfig.snapshot ? buildStaticSnapshot(html).text : null,
-			interactiveElements: null,
+			interactiveElements: runConfig.detectInteractiveElements
+				? detectInteractiveElementsStatic(html)
+				: null,
 			cacheStatus: null,
 			cachedAt: null,
 		};
@@ -316,6 +362,7 @@ export class WebCrawler {
 		crawlConfig?: Partial<CrawlerRunConfig>,
 		deepConfig?: Partial<DeepCrawlConfig>,
 	): Promise<CrawlResult[]> {
+		validateUrl(startUrl);
 		if (!this.ready) await this.start();
 
 		const config = createDeepCrawlConfig({
@@ -334,6 +381,7 @@ export class WebCrawler {
 		crawlConfig?: Partial<CrawlerRunConfig>,
 		deepConfig?: Partial<DeepCrawlConfig>,
 	): AsyncGenerator<CrawlResult, void, unknown> {
+		validateUrl(startUrl);
 		if (!this.ready) await this.start();
 
 		const config = createDeepCrawlConfig({
@@ -365,5 +413,23 @@ export class WebCrawler {
 			default:
 				return new NoExtractionStrategy();
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+function validateUrl(url: string): void {
+	if (!url || typeof url !== "string") {
+		throw new Error("URL must be a non-empty string");
+	}
+	if (url === "raw:") return; // processHtml sentinel
+	try {
+		new URL(url);
+	} catch {
+		throw new Error(
+			`Invalid URL: "${url}". Must be a valid absolute URL (e.g., https://example.com)`,
+		);
 	}
 }
