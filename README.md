@@ -31,6 +31,9 @@
 - **Storage state persistence** — save/load cookies and localStorage between sessions
 - **AI-friendly errors** — converts 20+ error patterns into actionable messages
 - **Hooks** — inject custom behavior at 5 lifecycle points (page created, before/after navigation, etc.)
+- **Resource blocking** — abort images, CSS, fonts, and media for faster content-only crawls
+- **Navigation strategies** — configurable `waitUntil`: `commit` (fastest), `domcontentloaded`, `load`, `networkidle`
+- **In-page extraction** — extract links/media/metadata directly in the browser via `page.evaluate()`, skipping HTML serialization
 - **Change tracking** — detect new/changed/unchanged/removed pages between crawl runs with text diffs
 - **Crawler monitoring** — real-time stats tracking (pages/sec, success rates, data volume)
 - **Configurable logging** — pluggable Logger interface with ConsoleLogger and SilentLogger
@@ -244,6 +247,29 @@ new PruningContentFilter({ minWords: 5 }).filter(content);
 
 // Keep only relevant blocks
 new BM25ContentFilter({ threshold: 0.1 }).filter(content, "TypeScript crawler");
+```
+
+## Resource Blocking & Fast Navigation
+
+```typescript
+// Block images/CSS/fonts for content-only crawl
+const result = await crawler.crawl("https://example.com", {
+  blockResources: true,
+  navigationWaitUntil: "commit", // fastest — returns as soon as server responds
+});
+```
+
+## In-Page Extraction
+
+Extract data directly in the browser — skips HTML serialization round-trip:
+
+```typescript
+import { extractInPage } from "feedstock";
+
+crawler.setHook("beforeReturnHtml", async (page) => {
+  const data = await extractInPage(page);
+  // data.links, data.media, data.metadata — extracted inside browser context
+});
 ```
 
 ## URL Discovery
