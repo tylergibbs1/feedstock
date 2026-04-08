@@ -94,18 +94,8 @@ export class PlaywrightCrawlerStrategy extends CrawlerStrategy {
 
 		// Block unnecessary resources at context level for faster page loads
 		if (config.blockResources) {
-			const ctx = page.context();
-			await ctx.route(
-				"**/*.{png,jpg,jpeg,gif,webp,avif,svg,ico,woff,woff2,ttf,eot,mp4,mp3,avi,mov}",
-				(route) => route.abort(),
-			);
-			await ctx.route("**/*", (route) => {
-				const type = route.request().resourceType();
-				if (type === "stylesheet" || type === "font" || type === "media") {
-					return route.abort();
-				}
-				return route.continue();
-			});
+			const { applyResourceBlocking } = await import("../utils/resource-blocker");
+			await applyResourceBlocking(page.context(), config.blockResources);
 		}
 
 		await this.executeHook("onPageCreated", page);

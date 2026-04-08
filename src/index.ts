@@ -1,11 +1,12 @@
 // Core
 
-export { CrawlCache } from "./cache/database";
+export { contentHash, CrawlCache } from "./cache/database";
 // Cache
 export { CacheMode } from "./cache/mode";
 export { type CacheValidationResult, CacheValidator } from "./cache/validator";
 // Config
 export {
+	type BlockResourcesConfig,
 	type BrowserBackend,
 	type BrowserConfig,
 	type BrowserType,
@@ -14,8 +15,17 @@ export {
 	createCrawlerRunConfig,
 	type ExtractionStrategyConfig,
 	type ProxyConfig,
+	type ResourceBlockProfile,
 	type WaitForType,
 } from "./config";
+export {
+	findProjectConfig,
+	type FeedstockProjectConfig,
+	type LayeredConfig,
+	loadConfig,
+	loadEnvConfig,
+	loadProjectConfig,
+} from "./config-loader";
 export { WebCrawler, type WebCrawlerOptions } from "./crawler";
 // Deep Crawl
 export {
@@ -109,6 +119,10 @@ export {
 	type CssField,
 } from "./strategies/extraction/css";
 export { RegexExtractionStrategy } from "./strategies/extraction/regex";
+export {
+	type AccessibilityExtractionConfig,
+	AccessibilityExtractionStrategy,
+} from "./strategies/extraction/accessibility";
 // Additional Extraction
 export { TableExtractionStrategy } from "./strategies/extraction/table";
 export {
@@ -141,6 +155,7 @@ export {
 	type TextDiff,
 } from "./utils/change-tracker";
 export { toFriendlyError, withFriendlyErrors } from "./utils/errors";
+export { applyResourceBlocking } from "./utils/resource-blocker";
 export {
 	cleanHtml,
 	extractLinks,
@@ -151,6 +166,7 @@ export {
 export { extractAllStreaming } from "./utils/html-rewriter";
 export { extractIframeContent, type InlinedIframe, inlineIframeContent } from "./utils/iframe";
 export { extractInPage, type InPageExtractionResult } from "./utils/in-page-extract";
+export { detectCursorInteractiveElements } from "./utils/cursor-interactive";
 export { detectInteractiveElements } from "./utils/interactive";
 export { detectInteractiveElementsStatic } from "./utils/interactive-static";
 // Utils
