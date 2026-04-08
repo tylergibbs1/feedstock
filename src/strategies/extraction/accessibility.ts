@@ -41,9 +41,7 @@ export class AccessibilityExtractionStrategy extends ExtractionStrategy {
 
 		// Flatten tree into individual items
 		const flatNodes = flattenTree(snapshot.tree);
-		const roleFilter = this.config.roles
-			? new Set(this.config.roles)
-			: null;
+		const roleFilter = this.config.roles ? new Set(this.config.roles) : null;
 
 		for (const node of flatNodes) {
 			if (!node.ref) continue; // Skip non-referenced nodes

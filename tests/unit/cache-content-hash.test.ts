@@ -106,7 +106,9 @@ describe("CrawlCache content hash", () => {
 			)
 		`);
 		db.query("INSERT INTO crawl_cache (url, result, cached_at) VALUES (?, ?, ?)").run(
-			"https://old.com", '{"html":"old"}', Date.now() / 1000,
+			"https://old.com",
+			'{"html":"old"}',
+			Date.now() / 1000,
 		);
 		db.close();
 

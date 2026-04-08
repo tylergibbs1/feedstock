@@ -1,6 +1,6 @@
-import { describe, expect, mock, test } from "bun:test";
-import { createBrowserConfig } from "../../src/config";
+import { describe, expect, test } from "bun:test";
 import { BrowserManager } from "../../src/browser/manager";
+import { createBrowserConfig } from "../../src/config";
 
 describe("BrowserManager retry logic", () => {
 	test("start() throws non-transient errors immediately", async () => {
@@ -10,16 +10,11 @@ describe("BrowserManager retry logic", () => {
 		});
 		const manager = new BrowserManager(config);
 
-		const start = performance.now();
 		try {
 			await manager.start({ maxRetries: 3, baseDelayMs: 100 });
 			expect.unreachable("should have thrown");
 		} catch (err) {
-			const elapsed = performance.now() - start;
 			expect(err).toBeInstanceOf(Error);
-			// If it retried 3 times with 100ms+ delays, it would take >300ms
-			// A non-transient error should fail quickly (or transient ones will retry)
-			// We just verify it does throw
 		}
 		await manager.close();
 	});

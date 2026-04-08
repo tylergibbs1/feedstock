@@ -19,21 +19,15 @@ interface ResolvedBlockConfig {
 
 const PROFILES: Record<string, ResolvedBlockConfig> = {
 	fast: {
-		patterns: [
-			"**/*.{png,jpg,jpeg,gif,webp,avif,svg,ico,woff,woff2,ttf,eot,mp4,mp3,avi,mov}",
-		],
+		patterns: ["**/*.{png,jpg,jpeg,gif,webp,avif,svg,ico,woff,woff2,ttf,eot,mp4,mp3,avi,mov}"],
 		resourceTypes: ["font", "media"],
 	},
 	minimal: {
-		patterns: [
-			"**/*.{png,jpg,jpeg,gif,webp,avif,svg,ico,woff,woff2,ttf,eot,mp4,mp3,avi,mov,css}",
-		],
+		patterns: ["**/*.{png,jpg,jpeg,gif,webp,avif,svg,ico,woff,woff2,ttf,eot,mp4,mp3,avi,mov,css}"],
 		resourceTypes: ["stylesheet", "font", "media", "image"],
 	},
 	"media-only": {
-		patterns: [
-			"**/*.{png,jpg,jpeg,gif,webp,avif,mp4,mp3,avi,mov,webm}",
-		],
+		patterns: ["**/*.{png,jpg,jpeg,gif,webp,avif,mp4,mp3,avi,mov,webm}"],
 		resourceTypes: ["image", "media"],
 	},
 };

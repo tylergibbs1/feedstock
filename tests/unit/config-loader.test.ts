@@ -238,10 +238,7 @@ describe("loadConfig", () => {
 
 	test("loads from feedstock.json", () => {
 		mkdirSync(tmpDir, { recursive: true });
-		writeFileSync(
-			join(tmpDir, "feedstock.json"),
-			JSON.stringify({ browser: { headless: false } }),
-		);
+		writeFileSync(join(tmpDir, "feedstock.json"), JSON.stringify({ browser: { headless: false } }));
 		const config = loadConfig({ startDir: tmpDir });
 		expect(config.configPath).toBe(join(tmpDir, "feedstock.json"));
 		expect(config.browser.headless).toBe(false);
@@ -249,10 +246,7 @@ describe("loadConfig", () => {
 
 	test("env vars override project file", () => {
 		mkdirSync(tmpDir, { recursive: true });
-		writeFileSync(
-			join(tmpDir, "feedstock.json"),
-			JSON.stringify({ browser: { headless: false } }),
-		);
+		writeFileSync(join(tmpDir, "feedstock.json"), JSON.stringify({ browser: { headless: false } }));
 		process.env.FEEDSTOCK_HEADLESS = "true";
 		const config = loadConfig({ startDir: tmpDir });
 		expect(config.browser.headless).toBe(true);

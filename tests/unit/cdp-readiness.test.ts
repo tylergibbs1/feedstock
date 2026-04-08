@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { createBrowserConfig } from "../../src/config";
 import { BrowserManager } from "../../src/browser/manager";
+import { createBrowserConfig } from "../../src/config";
 
 describe("Lightpanda CDP readiness polling", () => {
 	test("startLightpanda times out when no CDP server is running", async () => {
 		const config = createBrowserConfig({
-			backend: { kind: "lightpanda", mode: "cloud", token: "fake", endpoint: "ws://127.0.0.1:19999" },
+			backend: {
+				kind: "lightpanda",
+				mode: "cloud",
+				token: "fake",
+				endpoint: "ws://127.0.0.1:19999",
+			},
 		});
 		const manager = new BrowserManager(config);
 

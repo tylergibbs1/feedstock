@@ -1,4 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
+import type { BrowserContext, Route } from "playwright";
+import type { BlockResourcesConfig } from "../../src/config";
 import { createCrawlerRunConfig } from "../../src/config";
 
 // ---------------------------------------------------------------------------
@@ -71,33 +73,30 @@ describe("applyResourceBlocking", () => {
 		const routes: Array<{ pattern: string }> = [];
 		return {
 			routes,
-			route: mock(async (pattern: string, _handler: Function) => {
+			route: mock(async (pattern: string, _handler: (route: Route) => void) => {
 				routes.push({ pattern });
 			}),
-		};
+		} as unknown as BrowserContext & { routes: Array<{ pattern: string }> };
 	}
 
 	test("does nothing for false", async () => {
 		const { applyResourceBlocking } = await import("../../src/utils/resource-blocker");
 		const ctx = createMockContext();
-		await applyResourceBlocking(ctx as any, false);
-		expect(ctx.route).not.toHaveBeenCalled();
+		await applyResourceBlocking(ctx, false);
+		expect(ctx.routes.length).toBe(0);
 	});
 
 	test("applies fast profile for true (backward compat)", async () => {
 		const { applyResourceBlocking } = await import("../../src/utils/resource-blocker");
 		const ctx = createMockContext();
-		await applyResourceBlocking(ctx as any, true);
-		// Should have pattern routes + resource type route
-		expect(ctx.route).toHaveBeenCalled();
+		await applyResourceBlocking(ctx, true);
 		expect(ctx.routes.length).toBeGreaterThanOrEqual(2);
 	});
 
 	test("applies fast profile by name", async () => {
 		const { applyResourceBlocking } = await import("../../src/utils/resource-blocker");
 		const ctx = createMockContext();
-		await applyResourceBlocking(ctx as any, "fast");
-		expect(ctx.route).toHaveBeenCalled();
+		await applyResourceBlocking(ctx, "fast");
 		// fast has 1 glob pattern + 1 resource type route
 		expect(ctx.routes.length).toBe(2);
 	});
@@ -105,23 +104,21 @@ describe("applyResourceBlocking", () => {
 	test("applies minimal profile", async () => {
 		const { applyResourceBlocking } = await import("../../src/utils/resource-blocker");
 		const ctx = createMockContext();
-		await applyResourceBlocking(ctx as any, "minimal");
-		expect(ctx.route).toHaveBeenCalled();
+		await applyResourceBlocking(ctx, "minimal");
 		expect(ctx.routes.length).toBe(2);
 	});
 
 	test("applies media-only profile", async () => {
 		const { applyResourceBlocking } = await import("../../src/utils/resource-blocker");
 		const ctx = createMockContext();
-		await applyResourceBlocking(ctx as any, "media-only");
-		expect(ctx.route).toHaveBeenCalled();
+		await applyResourceBlocking(ctx, "media-only");
 		expect(ctx.routes.length).toBe(2);
 	});
 
 	test("applies custom config with patterns and types", async () => {
 		const { applyResourceBlocking } = await import("../../src/utils/resource-blocker");
 		const ctx = createMockContext();
-		await applyResourceBlocking(ctx as any, {
+		await applyResourceBlocking(ctx, {
 			patterns: ["**/*.woff2", "**/*.svg"],
 			resourceTypes: ["font"],
 		});
@@ -132,7 +129,7 @@ describe("applyResourceBlocking", () => {
 	test("applies custom config with only patterns", async () => {
 		const { applyResourceBlocking } = await import("../../src/utils/resource-blocker");
 		const ctx = createMockContext();
-		await applyResourceBlocking(ctx as any, {
+		await applyResourceBlocking(ctx, {
 			patterns: ["**/*.gif"],
 		});
 		// 1 pattern route, no resource type route (empty array)
@@ -142,8 +139,8 @@ describe("applyResourceBlocking", () => {
 	test("throws for unknown profile name", async () => {
 		const { applyResourceBlocking } = await import("../../src/utils/resource-blocker");
 		const ctx = createMockContext();
-		expect(
-			applyResourceBlocking(ctx as any, "nonexistent" as any),
-		).rejects.toThrow(/Unknown resource block profile/);
+		expect(applyResourceBlocking(ctx, "nonexistent" as BlockResourcesConfig)).rejects.toThrow(
+			/Unknown resource block profile/,
+		);
 	});
 });

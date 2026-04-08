@@ -1,6 +1,6 @@
 // Core
 
-export { contentHash, CrawlCache } from "./cache/database";
+export { CrawlCache, contentHash } from "./cache/database";
 // Cache
 export { CacheMode } from "./cache/mode";
 export { type CacheValidationResult, CacheValidator } from "./cache/validator";
@@ -19,8 +19,8 @@ export {
 	type WaitForType,
 } from "./config";
 export {
-	findProjectConfig,
 	type FeedstockProjectConfig,
+	findProjectConfig,
 	type LayeredConfig,
 	loadConfig,
 	loadEnvConfig,
@@ -109,6 +109,10 @@ export {
 	PlaywrightCrawlerStrategy,
 } from "./strategies/crawler-strategy";
 export {
+	type AccessibilityExtractionConfig,
+	AccessibilityExtractionStrategy,
+} from "./strategies/extraction/accessibility";
+export {
 	type ExtractedItem,
 	ExtractionStrategy,
 	NoExtractionStrategy,
@@ -119,10 +123,6 @@ export {
 	type CssField,
 } from "./strategies/extraction/css";
 export { RegexExtractionStrategy } from "./strategies/extraction/regex";
-export {
-	type AccessibilityExtractionConfig,
-	AccessibilityExtractionStrategy,
-} from "./strategies/extraction/accessibility";
 // Additional Extraction
 export { TableExtractionStrategy } from "./strategies/extraction/table";
 export {
@@ -154,8 +154,8 @@ export {
 	type PageChange,
 	type TextDiff,
 } from "./utils/change-tracker";
+export { detectCursorInteractiveElements } from "./utils/cursor-interactive";
 export { toFriendlyError, withFriendlyErrors } from "./utils/errors";
-export { applyResourceBlocking } from "./utils/resource-blocker";
 export {
 	cleanHtml,
 	extractLinks,
@@ -166,7 +166,6 @@ export {
 export { extractAllStreaming } from "./utils/html-rewriter";
 export { extractIframeContent, type InlinedIframe, inlineIframeContent } from "./utils/iframe";
 export { extractInPage, type InPageExtractionResult } from "./utils/in-page-extract";
-export { detectCursorInteractiveElements } from "./utils/cursor-interactive";
 export { detectInteractiveElements } from "./utils/interactive";
 export { detectInteractiveElementsStatic } from "./utils/interactive-static";
 // Utils
@@ -179,6 +178,7 @@ export {
 export { CrawlerMonitor, type CrawlStats } from "./utils/monitor";
 export { type ProxyRotationConfig, ProxyRotationStrategy } from "./utils/proxy-rotation";
 export { RateLimiter, type RateLimiterConfig } from "./utils/rate-limiter";
+export { applyResourceBlocking } from "./utils/resource-blocker";
 export { type RobotsDirectives, RobotsParser, type RobotsRule } from "./utils/robots";
 export {
 	applyStorageState,

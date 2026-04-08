@@ -1,4 +1,4 @@
-import { contentHash, CrawlCache } from "./cache/database";
+import { CrawlCache, contentHash } from "./cache/database";
 import { shouldReadCache, shouldWriteCache } from "./cache/mode";
 import type { BrowserConfig, CrawlerRunConfig } from "./config";
 import { createBrowserConfig, createCrawlerRunConfig } from "./config";
@@ -21,7 +21,10 @@ import {
 	type HookType,
 	PlaywrightCrawlerStrategy,
 } from "./strategies/crawler-strategy";
-import { type AccessibilityExtractionConfig, AccessibilityExtractionStrategy } from "./strategies/extraction/accessibility";
+import {
+	type AccessibilityExtractionConfig,
+	AccessibilityExtractionStrategy,
+} from "./strategies/extraction/accessibility";
 import { type ExtractionStrategy, NoExtractionStrategy } from "./strategies/extraction/base";
 import { type CssExtractionSchema, CssExtractionStrategy } from "./strategies/extraction/css";
 import { RegexExtractionStrategy } from "./strategies/extraction/regex";
@@ -261,8 +264,8 @@ export class WebCrawler {
 			// Write to cache
 			if (shouldWriteCache(runConfig.cacheMode) && this.cache) {
 				this.cache.set(url, JSON.stringify(result), {
-						contentHash: contentHash(result.cleanedHtml ?? result.html),
-					});
+					contentHash: contentHash(result.cleanedHtml ?? result.html),
+				});
 			}
 
 			return result;

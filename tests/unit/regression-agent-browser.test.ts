@@ -7,17 +7,17 @@ import { existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	buildStaticSnapshot,
+	CacheMode,
 	CrawlCache,
+	CssExtractionStrategy,
 	createBrowserConfig,
 	createCrawlerRunConfig,
-	CacheMode,
 	createEmptyLinks,
 	createEmptyMedia,
 	createErrorResult,
 	NoExtractionStrategy,
-	CssExtractionStrategy,
 	RegexExtractionStrategy,
-	buildStaticSnapshot,
 } from "../../src/index";
 
 // ---------------------------------------------------------------------------

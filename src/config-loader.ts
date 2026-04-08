@@ -92,14 +92,16 @@ export function loadEnvConfig(): {
 
 	// Crawl config
 	if (env.FEEDSTOCK_PAGE_TIMEOUT) crawl.pageTimeout = parseInt(env.FEEDSTOCK_PAGE_TIMEOUT, 10);
-	if (env.FEEDSTOCK_SCREENSHOT !== undefined) crawl.screenshot = env.FEEDSTOCK_SCREENSHOT === "true";
+	if (env.FEEDSTOCK_SCREENSHOT !== undefined)
+		crawl.screenshot = env.FEEDSTOCK_SCREENSHOT === "true";
 	if (env.FEEDSTOCK_BLOCK_RESOURCES !== undefined) {
 		const val = env.FEEDSTOCK_BLOCK_RESOURCES;
 		if (val === "true") crawl.blockResources = true;
 		else if (val === "false") crawl.blockResources = false;
 		else crawl.blockResources = val; // profile name: "fast", "minimal", "media-only"
 	}
-	if (env.FEEDSTOCK_GENERATE_MARKDOWN !== undefined) crawl.generateMarkdown = env.FEEDSTOCK_GENERATE_MARKDOWN !== "false";
+	if (env.FEEDSTOCK_GENERATE_MARKDOWN !== undefined)
+		crawl.generateMarkdown = env.FEEDSTOCK_GENERATE_MARKDOWN !== "false";
 
 	return {
 		browser: browser as Partial<BrowserConfig>,

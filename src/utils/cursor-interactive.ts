@@ -13,9 +13,7 @@ import type { InteractiveElement } from "../models";
  * Find elements that are interactable via cursor but aren't standard
  * interactive HTML elements (a, button, input, select, textarea).
  */
-export async function detectCursorInteractiveElements(
-	page: Page,
-): Promise<InteractiveElement[]> {
+export async function detectCursorInteractiveElements(page: Page): Promise<InteractiveElement[]> {
 	return page.evaluate(() => {
 		const STANDARD_INTERACTIVE = new Set([
 			"A",
@@ -46,11 +44,7 @@ export async function detectCursorInteractiveElements(
 
 			// Skip invisible elements
 			const style = window.getComputedStyle(htmlEl);
-			if (
-				style.display === "none" ||
-				style.visibility === "hidden" ||
-				style.opacity === "0"
-			) {
+			if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
 				continue;
 			}
 

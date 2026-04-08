@@ -60,7 +60,9 @@ export class CrawlCache {
 	}
 
 	private migrateSchema(): void {
-		const columns = this.db.query("PRAGMA table_info(crawl_cache)").all() as Array<{ name: string }>;
+		const columns = this.db.query("PRAGMA table_info(crawl_cache)").all() as Array<{
+			name: string;
+		}>;
 		const colNames = new Set(columns.map((c) => c.name));
 
 		if (!colNames.has("content_hash")) {
@@ -77,17 +79,34 @@ export class CrawlCache {
 		return { result: row.result, cachedAt: row.cached_at, contentHash: row.content_hash };
 	}
 
-	set(url: string, result: string, opts: { etag?: string; lastModified?: string; contentHash?: string } = {}): void {
+	set(
+		url: string,
+		result: string,
+		opts: { etag?: string; lastModified?: string; contentHash?: string } = {},
+	): void {
 		this.db
 			.query(
 				`INSERT OR REPLACE INTO crawl_cache (url, result, cached_at, etag, last_modified, content_hash)
          VALUES (?, ?, ?, ?, ?, ?)`,
 			)
-			.run(url, result, Date.now() / 1000, opts.etag ?? null, opts.lastModified ?? null, opts.contentHash ?? null);
+			.run(
+				url,
+				result,
+				Date.now() / 1000,
+				opts.etag ?? null,
+				opts.lastModified ?? null,
+				opts.contentHash ?? null,
+			);
 	}
 
 	setMany(
-		entries: Array<{ url: string; result: string; etag?: string; lastModified?: string; contentHash?: string }>,
+		entries: Array<{
+			url: string;
+			result: string;
+			etag?: string;
+			lastModified?: string;
+			contentHash?: string;
+		}>,
 	): void {
 		const insert = this.db.transaction((items: typeof entries) => {
 			const stmt = this.db.query(
@@ -96,7 +115,14 @@ export class CrawlCache {
 			);
 			const now = Date.now() / 1000;
 			for (const item of items) {
-				stmt.run(item.url, item.result, now, item.etag ?? null, item.lastModified ?? null, item.contentHash ?? null);
+				stmt.run(
+					item.url,
+					item.result,
+					now,
+					item.etag ?? null,
+					item.lastModified ?? null,
+					item.contentHash ?? null,
+				);
 			}
 			return items.length;
 		});
