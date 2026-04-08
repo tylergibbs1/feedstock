@@ -3,7 +3,7 @@
  * between crawler sessions.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { BrowserContext } from "playwright";
@@ -42,9 +42,8 @@ export async function saveStorageState(
 	const path = filePath ?? join(DEFAULT_STORAGE_DIR, "state.json");
 	const dir = dirname(path);
 
-	if (!existsSync(dir)) {
-		mkdirSync(dir, { recursive: true });
-	}
+	// mkdirSync is kept because Bun has no native mkdir alternative
+	mkdirSync(dir, { recursive: true });
 
 	const state = await context.storageState();
 
@@ -66,20 +65,21 @@ export async function saveStorageState(
 		savedAt: Date.now(),
 	};
 
-	writeFileSync(path, JSON.stringify(storageState, null, 2));
+	await Bun.write(path, JSON.stringify(storageState, null, 2));
 	return path;
 }
 
 /**
  * Load storage state from file. Returns null if file doesn't exist.
  */
-export function loadStorageState(filePath?: string): StorageState | null {
+export async function loadStorageState(filePath?: string): Promise<StorageState | null> {
 	const path = filePath ?? join(DEFAULT_STORAGE_DIR, "state.json");
 
-	if (!existsSync(path)) return null;
+	const file = Bun.file(path);
+	if (!(await file.exists())) return null;
 
 	try {
-		const raw = readFileSync(path, "utf-8");
+		const raw = await file.text();
 		return JSON.parse(raw) as StorageState;
 	} catch {
 		return null;
@@ -106,7 +106,7 @@ export async function applyStorageState(
  * Get the Playwright-compatible storage state path for use
  * in browser context creation.
  */
-export function getStorageStatePath(filePath?: string): string | null {
+export async function getStorageStatePath(filePath?: string): Promise<string | null> {
 	const path = filePath ?? join(DEFAULT_STORAGE_DIR, "state.json");
-	return existsSync(path) ? path : null;
+	return (await Bun.file(path).exists()) ? path : null;
 }

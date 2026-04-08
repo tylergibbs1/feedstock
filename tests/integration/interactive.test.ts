@@ -89,7 +89,7 @@ describe("saveStorageState / loadStorageState", () => {
 		expect(savedPath).toBe(testPath);
 		expect(existsSync(testPath)).toBe(true);
 
-		const state = loadStorageState(testPath);
+		const state = await loadStorageState(testPath);
 		expect(state).not.toBeNull();
 		expect(state!.savedAt).toBeGreaterThan(0);
 		expect(Array.isArray(state!.cookies)).toBe(true);

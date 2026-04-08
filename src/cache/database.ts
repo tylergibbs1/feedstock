@@ -16,12 +16,37 @@ class CacheRow {
 }
 
 /**
- * Compute a SHA-256 hash of content for change detection.
+ * Compute a fast non-cryptographic hash of content for change detection.
+ * Uses Bun.hash (wyhash) for speed — fine for cache invalidation.
  */
 export function contentHash(content: string): string {
-	const hasher = new Bun.CryptoHasher("sha256");
-	hasher.update(content);
-	return hasher.digest("hex");
+	return Bun.hash(content).toString(36);
+}
+
+/**
+ * Compress a result string with gzip and return base64-encoded data.
+ */
+function compress(data: string): string {
+	const compressed = Bun.gzipSync(Buffer.from(data));
+	return Buffer.from(compressed).toString("base64");
+}
+
+/**
+ * Decompress a stored result string. Handles both gzip-compressed (base64)
+ * and legacy uncompressed (raw JSON) formats for backward compatibility.
+ */
+function decompress(stored: string): string {
+	// Legacy uncompressed data starts with a JSON character
+	if (stored.startsWith("{") || stored.startsWith("[")) {
+		return stored;
+	}
+	try {
+		const decompressed = Bun.gunzipSync(Buffer.from(stored, "base64"));
+		return Buffer.from(decompressed).toString("utf-8");
+	} catch {
+		// If decompression fails, assume it's raw legacy data
+		return stored;
+	}
 }
 
 /**
@@ -76,7 +101,11 @@ export class CrawlCache {
 			.as(CacheRow)
 			.get(url);
 		if (!row) return null;
-		return { result: row.result, cachedAt: row.cached_at, contentHash: row.content_hash };
+		return {
+			result: decompress(row.result),
+			cachedAt: row.cached_at,
+			contentHash: row.content_hash,
+		};
 	}
 
 	set(
@@ -91,7 +120,7 @@ export class CrawlCache {
 			)
 			.run(
 				url,
-				result,
+				compress(result),
 				Date.now() / 1000,
 				opts.etag ?? null,
 				opts.lastModified ?? null,
@@ -117,7 +146,7 @@ export class CrawlCache {
 			for (const item of items) {
 				stmt.run(
 					item.url,
-					item.result,
+					compress(item.result),
 					now,
 					item.etag ?? null,
 					item.lastModified ?? null,

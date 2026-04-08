@@ -2,15 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { loadStorageState } from "../../src/utils/storage";
 
 describe("loadStorageState", () => {
-	test("returns null for non-existent file", () => {
-		const state = loadStorageState("/tmp/nonexistent-feedstock-storage.json");
+	test("returns null for non-existent file", async () => {
+		const state = await loadStorageState("/tmp/nonexistent-feedstock-storage.json");
 		expect(state).toBeNull();
 	});
 
-	test("returns null for invalid JSON", () => {
+	test("returns null for invalid JSON", async () => {
 		const path = "/tmp/feedstock-bad-storage.json";
-		Bun.write(path, "not json");
-		const state = loadStorageState(path);
+		await Bun.write(path, "not json");
+		const state = await loadStorageState(path);
 		// Should not crash
 		expect(state).toBeNull();
 	});

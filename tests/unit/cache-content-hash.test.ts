@@ -8,11 +8,11 @@ import { CrawlCache, contentHash } from "../../src/cache/database";
 const TEST_DB = join(tmpdir(), `feedstock-hash-test-${Date.now()}.db`);
 
 describe("contentHash", () => {
-	test("produces consistent SHA-256 hex digest", () => {
+	test("produces consistent hash", () => {
 		const hash1 = contentHash("hello world");
 		const hash2 = contentHash("hello world");
 		expect(hash1).toBe(hash2);
-		expect(hash1).toHaveLength(64); // SHA-256 hex = 64 chars
+		expect(hash1.length).toBeGreaterThan(0);
 	});
 
 	test("different content produces different hashes", () => {
@@ -23,7 +23,7 @@ describe("contentHash", () => {
 
 	test("empty string has a valid hash", () => {
 		const hash = contentHash("");
-		expect(hash).toHaveLength(64);
+		expect(hash.length).toBeGreaterThan(0);
 	});
 });
 

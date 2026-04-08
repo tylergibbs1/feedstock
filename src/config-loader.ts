@@ -66,7 +66,7 @@ export function loadEnvConfig(): {
 	const browser: Record<string, unknown> = {};
 	const crawl: Record<string, unknown> = {};
 
-	const env = process.env;
+	const env = Bun.env;
 
 	// Browser config
 	if (env.FEEDSTOCK_BROWSER_TYPE) browser.browserType = env.FEEDSTOCK_BROWSER_TYPE;

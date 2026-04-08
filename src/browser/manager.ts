@@ -84,7 +84,7 @@ export class BrowserManager {
 						`Browser start failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms`,
 						{ error: err instanceof Error ? err.message : String(err) },
 					);
-					await new Promise((r) => setTimeout(r, delay));
+					await Bun.sleep(delay);
 					continue;
 				}
 				throw err;
@@ -286,7 +286,7 @@ async function waitForCDPReady(
 		} catch {
 			// Not ready yet
 		}
-		await new Promise((r) => setTimeout(r, interval));
+		await Bun.sleep(interval);
 	}
 
 	throw new Error(

@@ -58,7 +58,7 @@ export class RateLimiter {
 		const waitTime = Math.max(0, delay - elapsed);
 
 		if (waitTime > 0) {
-			await new Promise((resolve) => setTimeout(resolve, waitTime));
+			await Bun.sleep(waitTime);
 		}
 
 		state.lastRequestTime = Date.now();

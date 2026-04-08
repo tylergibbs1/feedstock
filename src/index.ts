@@ -155,6 +155,7 @@ export {
 	type TextDiff,
 } from "./utils/change-tracker";
 export { detectCursorInteractiveElements } from "./utils/cursor-interactive";
+export { type DashboardConfig, MonitorDashboard } from "./utils/dashboard";
 export { toFriendlyError, withFriendlyErrors } from "./utils/errors";
 export {
 	cleanHtml,

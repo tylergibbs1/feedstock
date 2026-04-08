@@ -47,7 +47,7 @@ export class FetchEngine extends Engine {
 
 				// Only retry transient network errors
 				if (attempt < MAX_RETRIES && TRANSIENT_ERRORS.some((e) => msg.includes(e))) {
-					await new Promise((r) => setTimeout(r, RETRY_DELAY * (attempt + 1)));
+					await Bun.sleep(RETRY_DELAY * (attempt + 1));
 					continue;
 				}
 				throw lastError;

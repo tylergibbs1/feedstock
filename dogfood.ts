@@ -477,14 +477,14 @@ try {
 		const savedPath = await saveStorageState(page.context(), storagePath);
 		check("saved storage state", savedPath === storagePath);
 
-		const state = loadStorageState(storagePath);
+		const state = await loadStorageState(storagePath);
 		check("loaded storage state", !!state);
 		check("has cookies array", Array.isArray(state!.cookies));
 		check("has origins array", Array.isArray(state!.origins));
 		check("has savedAt timestamp", state!.savedAt > 0, new Date(state!.savedAt).toISOString());
 
 		// Non-existent file returns null
-		const missing = loadStorageState("/tmp/nonexistent-feedstock-state.json");
+		const missing = await loadStorageState("/tmp/nonexistent-feedstock-state.json");
 		check("missing file returns null", missing === null);
 
 		// Clean up

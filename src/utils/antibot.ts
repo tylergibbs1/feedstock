@@ -160,7 +160,7 @@ export async function withRetry<T>(
 		retries++;
 		if (attempt < opts.maxRetries) {
 			const delay = opts.retryDelay * (attempt + 1);
-			await new Promise((resolve) => setTimeout(resolve, delay));
+			await Bun.sleep(delay);
 		}
 	}
 
