@@ -19,7 +19,8 @@
 - **URL scoring** — keyword relevance, path depth, freshness, domain authority
 - **Rate limiting** — per-domain with exponential backoff
 - **Robots.txt** parsing and compliance
-- **Anti-bot detection** with stealth mode, user simulation, and auto-retry
+- **Built-in stealth mode** — one flag enables random user-agents, navigator.webdriver override, plugin/language spoofing, human-like mouse/scroll simulation
+- **Anti-bot detection** with auto-retry on blocked pages
 - **Multiple browser backends** — Playwright (Chromium/Firefox/WebKit) or [Lightpanda](https://lightpanda.io) (local/cloud)
 - **Proxy rotation** — round-robin strategy with health tracking
 - **URL seeding** — discover URLs from sitemaps
@@ -189,22 +190,26 @@ const crawler = new WebCrawler({
 });
 ```
 
-## Anti-Bot & Stealth
+## Stealth Mode
+
+One flag — random user-agents, navigator overrides, and human simulation:
 
 ```typescript
-import { applyStealthMode, simulateUser, withRetry, isBlocked } from "feedstock";
-
-// Apply stealth mode
-crawler.setHook("onPageCreated", async (page) => {
-  await applyStealthMode(page);
+// Enable stealth at browser level
+const crawler = new WebCrawler({
+  config: { stealth: true },
 });
 
-// Simulate human behavior
-crawler.setHook("afterGoto", async (page) => {
-  await simulateUser(page);
+// Human simulation per-crawl
+const result = await crawler.crawl(url, {
+  simulateUser: true, // random mouse movements + scrolling
 });
+```
 
+```typescript
 // Auto-retry on blocks
+import { withRetry, isBlocked } from "feedstock";
+
 const { result, retries } = await withRetry(
   () => crawler.crawl(url),
   (r) => isBlocked(r.html, r.statusCode ?? 200),

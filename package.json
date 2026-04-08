@@ -1,6 +1,6 @@
 {
   "name": "feedstock",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "High-performance web crawler and scraper for TypeScript, powered by Bun and Playwright",
   "type": "module",
   "main": "src/index.ts",

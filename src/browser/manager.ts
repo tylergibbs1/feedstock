@@ -8,8 +8,10 @@ import {
 	webkit,
 } from "playwright";
 import type { BrowserConfig, BrowserType } from "../config";
+import { applyStealthMode } from "../utils/antibot";
 import type { Logger } from "../utils/logger";
 import { SilentLogger } from "../utils/logger";
+import { getRandomUserAgent } from "../utils/user-agents";
 
 const BROWSER_LAUNCHERS: Record<BrowserType, PlaywrightBrowserType> = {
 	chromium,
@@ -111,16 +113,25 @@ export class BrowserManager {
 			}
 		}
 
+		// Resolve user-agent: explicit > stealth random > default
+		const userAgent =
+			this.config.userAgent ?? (this.config.stealth ? getRandomUserAgent() : undefined);
+
 		// Create new context and page
 		const context = await this.browser.newContext({
 			viewport: this.config.viewport,
 			ignoreHTTPSErrors: this.config.ignoreHttpsErrors,
 			javaScriptEnabled: this.config.javaEnabled,
 			serviceWorkers: "block",
-			...(this.config.userAgent && { userAgent: this.config.userAgent }),
+			...(userAgent && { userAgent }),
 		});
 
 		const page = await context.newPage();
+
+		// Apply stealth: override navigator.webdriver, plugins, languages
+		if (this.config.stealth) {
+			await applyStealthMode(page);
+		}
 		this.sessions.set(sid, { context, page, createdAt: Date.now() });
 		this.sessionOrder.push(sid);
 		this.logger.debug(`Created session ${sid}`);

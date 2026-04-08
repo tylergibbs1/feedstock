@@ -25,6 +25,8 @@ export interface BrowserConfig {
 	logger: Logger | null;
 	verbose: boolean;
 	backend: BrowserBackend;
+	/** Enable stealth mode: randomize user-agent, override navigator.webdriver, simulate human behavior */
+	stealth: boolean;
 }
 
 export interface ProxyConfig {
@@ -46,6 +48,7 @@ const DEFAULT_BROWSER_CONFIG: BrowserConfig = {
 	logger: null,
 	verbose: false,
 	backend: { kind: "playwright" },
+	stealth: false,
 };
 
 export function createBrowserConfig(overrides: Partial<BrowserConfig> = {}): BrowserConfig {

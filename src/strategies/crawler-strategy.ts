@@ -2,6 +2,7 @@ import type { Page } from "playwright";
 import { BrowserManager } from "../browser/manager";
 import type { BrowserConfig, CrawlerRunConfig, WaitForType } from "../config";
 import type { ConsoleMessage, CrawlResponse, NetworkRequest } from "../models";
+import { simulateUser } from "../utils/antibot";
 import type { Logger } from "../utils/logger";
 import { SilentLogger } from "../utils/logger";
 
@@ -119,6 +120,11 @@ export class PlaywrightCrawlerStrategy extends CrawlerStrategy {
 		});
 
 		await this.executeHook("afterGoto", page);
+
+		// Simulate human behavior if enabled
+		if (config.simulateUser) {
+			await simulateUser(page);
+		}
 
 		// Wait conditions
 		if (config.waitAfterLoad > 0) {
