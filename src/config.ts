@@ -99,6 +99,10 @@ export interface CrawlerRunConfig {
 	detectInteractiveElements: boolean;
 	inlineIframes: boolean;
 
+	// Performance
+	/** Block images, CSS, fonts, and media during crawl for faster page loads */
+	blockResources: boolean;
+
 	// Anti-bot
 	simulateUser: boolean;
 	magicMode: boolean;
@@ -138,6 +142,8 @@ const DEFAULT_CRAWLER_RUN_CONFIG: CrawlerRunConfig = {
 	snapshot: false,
 	detectInteractiveElements: false,
 	inlineIframes: false,
+
+	blockResources: false,
 
 	simulateUser: false,
 	magicMode: false,

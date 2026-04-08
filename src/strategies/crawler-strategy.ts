@@ -91,6 +91,21 @@ export class PlaywrightCrawlerStrategy extends CrawlerStrategy {
 			});
 		}
 
+		// Block unnecessary resources for faster page loads
+		if (config.blockResources) {
+			await page.route(
+				"**/*.{png,jpg,jpeg,gif,webp,avif,svg,ico,woff,woff2,ttf,eot,mp4,mp3,avi,mov}",
+				(route) => route.abort(),
+			);
+			await page.route("**/*", (route) => {
+				const type = route.request().resourceType();
+				if (type === "stylesheet" || type === "font" || type === "media") {
+					return route.abort();
+				}
+				return route.continue();
+			});
+		}
+
 		await this.executeHook("onPageCreated", page);
 
 		// Navigate
