@@ -446,7 +446,7 @@ console.log(result.snapshot);
 
 ## Documentation
 
-Full documentation at [usefeedstock.com](https://www.usefeedstock.com/).
+Full documentation at [feedstockai.com](https://www.feedstockai.com/).
 
 ## Development
 
