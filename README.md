@@ -35,6 +35,10 @@
 - **Navigation strategies** — configurable `waitUntil`: `commit` (fastest), `domcontentloaded`, `load`, `networkidle`
 - **In-page extraction** — extract links/media/metadata directly in the browser via `page.evaluate()`, skipping HTML serialization
 - **Change tracking** — detect new/changed/unchanged/removed pages between crawl runs with text diffs
+- **User-agent rotation** — pool of 9 realistic browser user-agents with round-robin rotation
+- **Graceful shutdown** — SIGINT/SIGTERM handlers auto-close browser processes
+- **Session management** — LRU eviction at 20 concurrent sessions, cache TTL pruning
+- **Input validation** — friendly error messages for invalid URLs, automatic retry on transient network errors
 - **Crawler monitoring** — real-time stats tracking (pages/sec, success rates, data volume)
 - **Configurable logging** — pluggable Logger interface with ConsoleLogger and SilentLogger
 
@@ -382,7 +386,7 @@ bun test tests/unit   # unit tests only
 bun run typecheck     # tsc --noEmit
 bun run lint          # biome check
 bun run check         # lint + typecheck
-bun run dogfood.ts    # 101 checks against real sites
+bun run dogfood.ts    # 148 checks against real sites
 ```
 
 ## License
