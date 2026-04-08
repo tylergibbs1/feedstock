@@ -29,6 +29,13 @@ src/
 │       ├── accessibility.ts   # Accessibility tree extraction
 │       ├── css.ts             # CSS selector extraction
 │       └── regex.ts           # Regex extraction
+├── cli/
+│   ├── index.ts          # CLI entry point + command router
+│   ├── parse-args.ts     # Hand-rolled argument parser (no deps)
+│   ├── output.ts         # JSON/NDJSON/text output formatting
+│   ├── errors.ts         # Structured JSON error handling
+│   ├── schema.ts         # Declarative command schema registry
+│   └── commands/         # crawl, crawl-many, deep-crawl, process, schema, cache, monitor
 ├── cache/
 │   ├── mode.ts           # CacheMode enum
 │   └── database.ts       # bun:sqlite cache layer with content hashing

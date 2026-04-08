@@ -43,8 +43,41 @@
 - **Layered config** — `feedstock.json` project file + `FEEDSTOCK_*` environment variables with programmatic overrides
 - **Incremental crawling** — content hashing in cache detects unchanged pages via `cache.hasChanged()`
 - **Benchmarking** — scenario-based benchmark suite with warmup, p50/stddev stats, and JSON output
-- **Crawler monitoring** — real-time stats tracking (pages/sec, success rates, data volume)
+- **Crawler monitoring** — real-time stats tracking (pages/sec, success rates, data volume) with live Bun.serve dashboard
 - **Configurable logging** — pluggable Logger interface with ConsoleLogger and SilentLogger
+- **Agent-first CLI** — JSON output by default, runtime schema introspection (`feedstock schema`), `--fields` for context window discipline, `--dry-run`, structured errors
+
+## CLI
+
+Agent-first CLI with JSON output by default when piped, runtime schema introspection, and structured errors.
+
+```bash
+# Install globally
+bun add -g feedstock
+bunx playwright install chromium
+
+# Single page
+feedstock crawl https://example.com
+feedstock crawl https://example.com --fields url,markdown --output json
+
+# Batch crawl
+echo "https://a.com\nhttps://b.com" | feedstock crawl-many --stdin --concurrency 10
+
+# Deep crawl a docs site
+feedstock deep-crawl https://docs.example.com --max-depth 3 --max-pages 50 --domain-filter docs.example.com
+
+# Process raw HTML
+echo '<h1>Hello</h1>' | feedstock process --fields markdown
+
+# Agent introspection — discover all parameters
+feedstock schema crawl
+
+# Cache management
+feedstock cache stats
+feedstock cache prune --older-than 86400000
+```
+
+All commands support `--output json|ndjson|text`, `--fields` for context window discipline, and `--json` for raw config passthrough. See `feedstock --help` or `feedstock schema <command>` for full details.
 
 ## Quick Start
 
