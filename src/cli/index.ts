@@ -20,7 +20,7 @@ import type { ParsedArgs } from "./parse-args";
 import { parseArgs } from "./parse-args";
 import { renderHelp, SCHEMAS } from "./schema";
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 const COMMANDS: Record<string, (args: ParsedArgs, config: LayeredConfig) => Promise<void>> = {
 	crawl: runCrawl,
