@@ -118,21 +118,15 @@ export class EngineManager {
 			(config.waitFor && config.waitFor.kind !== "delay");
 
 		if (needsBrowser && !this.config.fetchFirst) {
-			// Skip fetch entirely — go straight to browser engines
 			return this.engines.filter((e) => e.canHandle(config));
 		}
 
-		// fetchFirst mode: try all engines, cheapest first
-		// canHandle check ensures we only try engines that support required features
-		// BUT we still include fetch even if it can't handle everything (auto-escalate will catch it)
-		const capable = this.engines.filter((e) => e.canHandle(config));
-
+		// fetchFirst: include fetch even if it can't handle everything (auto-escalate catches it)
 		if (this.config.fetchFirst && !needsBrowser) {
-			// For simple requests, just use the sorted order (fetch first)
-			return this.engines.filter((e) => e.name === "fetch" || e.canHandle(config));
+			return this.engines;
 		}
 
-		return capable;
+		return this.engines.filter((e) => e.canHandle(config));
 	}
 
 	get engineNames(): string[] {
