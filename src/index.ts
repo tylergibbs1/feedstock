@@ -146,6 +146,7 @@ export {
 	extractLinks,
 	extractMedia,
 	extractMetadata,
+	scrapeAll,
 } from "./utils/html";
 export { extractIframeContent, type InlinedIframe, inlineIframeContent } from "./utils/iframe";
 export { detectInteractiveElements } from "./utils/interactive";

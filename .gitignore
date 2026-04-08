@@ -4,3 +4,5 @@ dist/
 *.db-wal
 *.db-shm
 .DS_Store
+run.log
+results.tsv

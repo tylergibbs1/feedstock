@@ -1,6 +1,6 @@
 import type { CrawlerRunConfig } from "../config";
 import type { ScrapingResult } from "../models";
-import { cleanHtml, extractLinks, extractMedia, extractMetadata } from "../utils/html";
+import { scrapeAll } from "../utils/html";
 
 /**
  * Abstract base for content scraping strategies.
@@ -11,20 +11,16 @@ export abstract class ContentScrapingStrategy {
 
 /**
  * Default scraping strategy using Cheerio for HTML parsing.
- * Extracts clean HTML, links, media, and metadata.
+ * Parses HTML once and extracts clean HTML, links, media, and metadata in a single pass.
  */
 export class CheerioScrapingStrategy extends ContentScrapingStrategy {
 	scrape(url: string, html: string, config: CrawlerRunConfig): ScrapingResult {
-		const cleanedHtml = cleanHtml(html, {
+		const { cleanedHtml, links, media, metadata } = scrapeAll(html, url, {
 			excludeTags: config.excludeTags,
 			includeTags: config.includeTags,
 			cssSelector: config.cssSelector,
 			removeOverlayElements: config.removeOverlayElements,
 		});
-
-		const links = extractLinks(html, url);
-		const media = extractMedia(html, url);
-		const metadata = extractMetadata(html);
 
 		return {
 			cleanedHtml,

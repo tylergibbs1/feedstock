@@ -1,6 +1,31 @@
 import * as cheerio from "cheerio";
+import type { CheerioAPI } from "cheerio";
 
 const NOISE_TAGS = new Set(["script", "style", "noscript", "svg", "path", "iframe", "head"]);
+
+/**
+ * Parse HTML once and run all extraction in a single pass.
+ * Avoids calling cheerio.load() 4 times per page.
+ */
+export function scrapeAll(
+	html: string,
+	baseUrl: string,
+	opts: {
+		excludeTags?: string[];
+		includeTags?: string[];
+		cssSelector?: string | null;
+		removeOverlayElements?: boolean;
+	} = {},
+) {
+	const $ = cheerio.load(html);
+	// Extract links, media, metadata BEFORE cleaning (cleaning mutates the DOM)
+	const links = extractLinksWith($, baseUrl);
+	const media = extractMediaWith($, baseUrl);
+	const metadata = extractMetadataWith($);
+	// Now clean (removes script/style/noise tags from $)
+	const cleanedHtml = cleanHtmlWith(cheerio.load(html), opts);
+	return { cleanedHtml, links, media, metadata };
+}
 
 const _BLOCK_ELEMENTS = new Set([
 	"div",
@@ -47,7 +72,18 @@ export function cleanHtml(
 		removeOverlayElements?: boolean;
 	} = {},
 ): string {
-	const $ = cheerio.load(html);
+	return cleanHtmlWith(cheerio.load(html), opts);
+}
+
+function cleanHtmlWith(
+	$: CheerioAPI,
+	opts: {
+		excludeTags?: string[];
+		includeTags?: string[];
+		cssSelector?: string | null;
+		removeOverlayElements?: boolean;
+	} = {},
+): string {
 
 	// Remove noise tags
 	const tagsToRemove = new Set([...NOISE_TAGS, ...(opts.excludeTags ?? [])]);
@@ -93,7 +129,10 @@ export function cleanHtml(
  * article tags, JSON-LD, favicons, feeds, and more.
  */
 export function extractMetadata(html: string): Record<string, unknown> {
-	const $ = cheerio.load(html);
+	return extractMetadataWith(cheerio.load(html));
+}
+
+function extractMetadataWith($: CheerioAPI): Record<string, unknown> {
 	const meta = (name: string) => $(`meta[name="${name}"]`).attr("content") ?? null;
 	const prop = (property: string) => $(`meta[property="${property}"]`).attr("content") ?? null;
 	const httpEquiv = (name: string) => $(`meta[http-equiv="${name}"]`).attr("content") ?? null;
@@ -243,7 +282,16 @@ export function extractLinks(
 	internal: Array<{ href: string; text: string; title: string; baseDomain: string }>;
 	external: Array<{ href: string; text: string; title: string; baseDomain: string }>;
 } {
-	const $ = cheerio.load(html);
+	return extractLinksWith(cheerio.load(html), baseUrl);
+}
+
+function extractLinksWith(
+	$: CheerioAPI,
+	baseUrl: string,
+): {
+	internal: Array<{ href: string; text: string; title: string; baseDomain: string }>;
+	external: Array<{ href: string; text: string; title: string; baseDomain: string }>;
+} {
 	const internal: Array<{ href: string; text: string; title: string; baseDomain: string }> = [];
 	const external: Array<{ href: string; text: string; title: string; baseDomain: string }> = [];
 
@@ -298,7 +346,10 @@ export function extractLinks(
  * Extract media items (images, videos, audio) from HTML.
  */
 export function extractMedia(html: string, baseUrl: string) {
-	const $ = cheerio.load(html);
+	return extractMediaWith(cheerio.load(html), baseUrl);
+}
+
+function extractMediaWith($: CheerioAPI, baseUrl: string) {
 	const images: Array<{
 		src: string;
 		alt: string;

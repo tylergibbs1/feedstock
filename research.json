@@ -1,0 +1,43 @@
+{
+  "project": "feedstock",
+  "goal": "Optimize test performance (reduce runtime) and improve code quality while maintaining 277 passing tests and 115 dogfood checks",
+  "run_command": "bun test 2>&1 | tee run.log",
+  "metric_extraction": "grep -oP '\\d+\\.\\d+s' run.log | tail -1 | grep -oP '[\\d.]+'",
+  "metric_name": "test_time_seconds",
+  "metric_direction": "lower",
+  "secondary_metric_command": "grep -oP '\\d+ pass' run.log | grep -oP '\\d+'",
+  "secondary_metric_name": "tests_passing",
+  "timeout_seconds": 120,
+  "tag": "apr7",
+  "no_new_dependencies": true,
+  "modifiable_files": [
+    "src/utils/html.ts",
+    "src/snapshot/accessibility.ts",
+    "src/strategies/markdown.ts",
+    "src/strategies/scraping-strategy.ts",
+    "src/engines/engine-manager.ts",
+    "src/engines/fetch.ts",
+    "src/engines/base.ts",
+    "src/deep-crawl/strategy.ts",
+    "src/deep-crawl/filters.ts",
+    "src/deep-crawl/scorers.ts",
+    "src/cache/database.ts",
+    "src/utils/rate-limiter.ts",
+    "src/utils/robots.ts",
+    "src/utils/change-tracker.ts",
+    "src/crawler.ts",
+    "src/config.ts",
+    "src/strategies/content-filter.ts",
+    "src/strategies/chunking.ts",
+    "src/utils/antibot.ts",
+    "src/utils/errors.ts",
+    "src/utils/monitor.ts"
+  ],
+  "readonly_files": [
+    "src/models.ts",
+    "src/index.ts",
+    "tests/helpers/server.ts",
+    "package.json",
+    "tsconfig.json"
+  ]
+}
