@@ -1,11 +1,13 @@
 import * as cheerio from "cheerio";
 import type { CheerioAPI } from "cheerio";
+import { extractAllStreaming } from "./html-rewriter";
 
 const NOISE_TAGS = new Set(["script", "style", "noscript", "svg", "path", "iframe", "head"]);
 
 /**
- * Parse HTML once and run all extraction in a single pass.
- * Avoids calling cheerio.load() 4 times per page.
+ * Scrape all data from HTML using Bun's native HTMLRewriter for
+ * links/media/metadata (streaming, no DOM) and Cheerio only for
+ * HTML cleaning (which needs DOM manipulation).
  */
 export function scrapeAll(
 	html: string,
@@ -17,13 +19,10 @@ export function scrapeAll(
 		removeOverlayElements?: boolean;
 	} = {},
 ) {
-	const $ = cheerio.load(html);
-	// Extract links, media, metadata BEFORE cleaning (cleaning mutates the DOM)
-	const links = extractLinksWith($, baseUrl);
-	const media = extractMediaWith($, baseUrl);
-	const metadata = extractMetadataWith($);
-	// Now clean (removes script/style/noise tags from $)
-	const cleanedHtml = cleanHtmlWith(cheerio.load(html), opts);
+	// Streaming extraction via HTMLRewriter — no DOM allocation
+	const { links, media, metadata } = extractAllStreaming(html, baseUrl);
+	// Cheerio only for cleaning (needs DOM mutation for tag removal + CSS selectors)
+	const cleanedHtml = cleanHtml(html, opts);
 	return { cleanedHtml, links, media, metadata };
 }
 
