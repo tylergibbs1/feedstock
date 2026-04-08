@@ -203,7 +203,7 @@ const config = createCrawlerRunConfig({ cacheMode: CacheMode.WriteOnly });
 
 ### Content hashing for incremental crawls
 
-Every cached entry stores a SHA-256 hash of the cleaned HTML. Use `hasChanged()` to detect whether a page has new content without comparing full HTML strings:
+Every cached entry stores a fast content hash of the cleaned HTML. Use `hasChanged()` to detect whether a page has new content without comparing full HTML strings:
 
 ```ts
 import { CrawlCache, contentHash } from "feedstock";
@@ -445,8 +445,8 @@ bun run benchmarks/bench.ts contentHash
 | `cache:write-1000`     | Writing 1000 entries via `setMany()`      |
 | `cache:read-100`       | Reading 100 entries via `get()`           |
 | `cache:hasChanged-100` | Checking 100 hashes via `hasChanged()`    |
-| `contentHash:10kb`     | SHA-256 hashing of 10KB content           |
-| `contentHash:100kb`    | SHA-256 hashing of 100KB content          |
+| `contentHash:10kb`     | Hashing 10KB content (Bun.hash/wyhash)    |
+| `contentHash:100kb`    | Hashing 100KB content (Bun.hash/wyhash)   |
 
 ### Output format
 
