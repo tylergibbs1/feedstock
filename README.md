@@ -386,7 +386,7 @@ Full documentation at [usefeedstock.com](https://www.usefeedstock.com/).
 
 ```bash
 bun install
-bun test              # 277 tests
+bun test              # 284 tests
 bun test tests/unit   # unit tests only
 bun run typecheck     # tsc --noEmit
 bun run lint          # biome check
