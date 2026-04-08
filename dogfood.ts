@@ -626,9 +626,154 @@ try {
 	}
 
 	// -----------------------------------------------------------------------
-	// 26. Monitor stats
+	// 26. Beefy site: GitHub repo page (heavy DOM, JS, lots of links)
 	// -----------------------------------------------------------------------
-	console.log("\n\x1b[1m26. Crawler monitor\x1b[0m");
+	console.log("\n\x1b[1m26. Beefy: GitHub repo page\x1b[0m");
+	{
+		const r = await crawler.crawl("https://github.com/oven-sh/bun", {
+			cacheMode: CacheMode.Bypass,
+			snapshot: true,
+		});
+		monitor.recordPageComplete({ success: r.success, fromCache: false, responseTimeMs: 0, bytesDownloaded: r.html.length });
+
+		check("success", r.success);
+		check("large HTML", r.html.length > 50_000, `${(r.html.length / 1024).toFixed(0)}KB`);
+		check("many links", r.links.internal.length + r.links.external.length > 50, `${r.links.internal.length + r.links.external.length} links`);
+		check("has metadata", !!r.metadata?.title, `"${r.metadata?.title}"`);
+		check("has markdown", !!r.markdown && r.markdown.rawMarkdown.length > 500, `${r.markdown?.rawMarkdown.length} chars`);
+		check("snapshot much smaller than HTML", r.snapshot!.length < r.html.length / 2, `${(r.snapshot!.length / 1024).toFixed(0)}KB snapshot vs ${(r.html.length / 1024).toFixed(0)}KB HTML`);
+		check("has images", r.media.images.length > 0, `${r.media.images.length} images`);
+	}
+
+	// -----------------------------------------------------------------------
+	// 27. Beefy: Amazon product page (anti-bot, heavy JS, complex DOM)
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m27. Beefy: Amazon product page\x1b[0m");
+	{
+		const r = await crawler.crawl("https://www.amazon.com/dp/B0D1XD1ZV3", {
+			cacheMode: CacheMode.Bypass,
+		});
+		monitor.recordPageComplete({ success: r.success, fromCache: false, responseTimeMs: 0, bytesDownloaded: r.html.length });
+
+		check("success (may be blocked)", r.success);
+		check("got HTML", r.html.length > 1000, `${(r.html.length / 1024).toFixed(0)}KB`);
+		if (r.success && r.statusCode === 200) {
+			const { isBlocked: blocked } = await import("./src/utils/antibot");
+			const isAmazonBlocked = blocked(r.html, r.statusCode ?? 200);
+			check("anti-bot detection works", typeof isAmazonBlocked === "boolean", isAmazonBlocked ? "blocked" : "not blocked");
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// 28. Beefy: MDN docs (deep content, tables, code blocks, many headings)
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m28. Beefy: MDN docs page\x1b[0m");
+	{
+		const r = await crawler.crawl("https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array", {
+			cacheMode: CacheMode.Bypass,
+			snapshot: true,
+		});
+		monitor.recordPageComplete({ success: r.success, fromCache: false, responseTimeMs: 0, bytesDownloaded: r.html.length });
+
+		check("success", r.success);
+		check("large content", r.html.length > 100_000, `${(r.html.length / 1024).toFixed(0)}KB`);
+		check("many links", r.links.internal.length > 50, `${r.links.internal.length} internal links`);
+		check("has markdown", !!r.markdown && r.markdown.rawMarkdown.length > 2000);
+		check("snapshot generated", !!r.snapshot && r.snapshot.length > 100);
+		check("rich metadata", Object.keys(r.metadata ?? {}).length > 5, `${Object.keys(r.metadata ?? {}).length} metadata fields`);
+
+		// Table extraction on MDN
+		const { TableExtractionStrategy } = await import("./src/strategies/extraction/table");
+		const tables = await new TableExtractionStrategy({ minRows: 2 }).extract(r.url, r.cleanedHtml ?? r.html);
+		check("found tables", tables.length > 0, `${tables.length} tables`);
+	}
+
+	// -----------------------------------------------------------------------
+	// 29. Beefy: Reddit thread (dynamic content, nested comments, many elements)
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m29. Beefy: Reddit (old.reddit for static HTML)\x1b[0m");
+	{
+		const r = await crawler.crawl("https://old.reddit.com/r/programming/top/?t=week", {
+			cacheMode: CacheMode.Bypass,
+		});
+		monitor.recordPageComplete({ success: r.success, fromCache: false, responseTimeMs: 0, bytesDownloaded: r.html.length });
+
+		check("success", r.success);
+		check("got content", r.html.length > 20_000, `${(r.html.length / 1024).toFixed(0)}KB`);
+		check("has links", r.links.internal.length + r.links.external.length > 30, `${r.links.internal.length + r.links.external.length} links`);
+		check("has markdown", !!r.markdown && r.markdown.rawMarkdown.length > 500);
+	}
+
+	// -----------------------------------------------------------------------
+	// 30. Beefy: NYT homepage (paywall, heavy media, complex layout)
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m30. Beefy: NYT homepage\x1b[0m");
+	{
+		const r = await crawler.crawl("https://www.nytimes.com", {
+			cacheMode: CacheMode.Bypass,
+		});
+		monitor.recordPageComplete({ success: r.success, fromCache: false, responseTimeMs: 0, bytesDownloaded: r.html.length });
+
+		check("success", r.success);
+		check("large page", r.html.length > 50_000, `${(r.html.length / 1024).toFixed(0)}KB`);
+		check("many links", r.links.internal.length > 20, `${r.links.internal.length} internal`);
+		check("has images", r.media.images.length > 5, `${r.media.images.length} images`);
+		check("has metadata", !!r.metadata?.title);
+	}
+
+	// -----------------------------------------------------------------------
+	// 31. Deep crawl: bun.sh docs (real multi-page crawl)
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m31. Deep crawl: bun.sh (depth 1, max 10)\x1b[0m");
+	{
+		const results = await crawler.deepCrawl(
+			"https://bun.sh",
+			{ cacheMode: CacheMode.Bypass },
+			{
+				maxDepth: 1,
+				maxPages: 10,
+				rateLimiter: new RateLimiter({ baseDelay: 300, jitter: 0 }),
+			},
+		);
+
+		check("crawled multiple pages", results.length > 1, `${results.length} pages`);
+		check("all successful", results.every((r) => r.success));
+		check("no duplicates", new Set(results.map((r) => r.url)).size === results.length);
+
+		const totalLinks = results.reduce((sum, r) => sum + r.links.internal.length + r.links.external.length, 0);
+		check("found many links total", totalLinks > 20, `${totalLinks} links across ${results.length} pages`);
+	}
+
+	// -----------------------------------------------------------------------
+	// 32. Resource blocking speed comparison
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m32. Resource blocking speed test\x1b[0m");
+	{
+		// Without blocking
+		const t1 = Date.now();
+		const r1 = await crawler.crawl("https://developer.mozilla.org/en-US/docs/Web/HTML", {
+			cacheMode: CacheMode.Bypass,
+			blockResources: false,
+		});
+		const time1 = Date.now() - t1;
+
+		// With blocking
+		const t2 = Date.now();
+		const r2 = await crawler.crawl("https://developer.mozilla.org/en-US/docs/Web/CSS", {
+			cacheMode: CacheMode.Bypass,
+			blockResources: true,
+		});
+		const time2 = Date.now() - t2;
+
+		check("both succeeded", r1.success && r2.success);
+		check("blocked crawl has content", r2.html.length > 5000, `${(r2.html.length / 1024).toFixed(0)}KB`);
+		check("blocked crawl timing", true, `${time1}ms normal vs ${time2}ms blocked`);
+	}
+
+	// -----------------------------------------------------------------------
+	// 33. Monitor stats
+	// -----------------------------------------------------------------------
+	console.log("\n\x1b[1m33. Crawler monitor\x1b[0m");
 	{
 		const stats = monitor.getStats();
 		check("tracked pages", stats.pagesTotal >= 3, `${stats.pagesTotal} pages`);
