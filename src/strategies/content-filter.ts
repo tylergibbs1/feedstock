@@ -81,23 +81,37 @@ export class BM25ContentFilter extends ContentFilterStrategy {
 		const blockTokens = blocks.map((b) => this.tokenize(b));
 		const avgLen = blockTokens.reduce((sum, t) => sum + t.length, 0) / blockTokens.length;
 
+		// Pre-compute term frequency maps and term sets for O(1) lookups
+		const blockFreqs = blockTokens.map((tokens) => {
+			const freq = new Map<string, number>();
+			for (const t of tokens) {
+				freq.set(t, (freq.get(t) ?? 0) + 1);
+			}
+			return freq;
+		});
+		const blockSets = blockTokens.map((tokens) => new Set(tokens));
+
 		// Compute IDF for query terms
 		const idf = new Map<string, number>();
 		for (const term of queryTerms) {
-			const df = blockTokens.filter((tokens) => tokens.includes(term)).length;
+			let df = 0;
+			for (const s of blockSets) {
+				if (s.has(term)) df++;
+			}
 			idf.set(term, Math.log((blocks.length - df + 0.5) / (df + 0.5) + 1));
 		}
 
 		// Score each block
 		const scored = blocks.map((block, i) => {
-			const tokens = blockTokens[i];
+			const freq = blockFreqs[i];
+			const tokenCount = blockTokens[i].length;
 			let score = 0;
 
 			for (const term of queryTerms) {
-				const tf = tokens.filter((t) => t === term).length;
+				const tf = freq.get(term) ?? 0;
 				const termIdf = idf.get(term) ?? 0;
 				const numerator = tf * (this.k1 + 1);
-				const denominator = tf + this.k1 * (1 - this.b + this.b * (tokens.length / avgLen));
+				const denominator = tf + this.k1 * (1 - this.b + this.b * (tokenCount / avgLen));
 				score += termIdf * (numerator / denominator);
 			}
 
