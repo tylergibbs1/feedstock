@@ -2,7 +2,21 @@
 
 export { CrawlCache, contentHash } from "./cache/database";
 // Cache
+export {
+	CacheFreshnessEvaluator,
+	type CachedEntry,
+	type FreshnessConfig,
+	type FreshnessResult,
+	type FreshnessSignal,
+	type SignalInputs,
+} from "./cache/freshness";
 export { CacheMode } from "./cache/mode";
+export {
+	buildSitemapIndex,
+	fetchSitemap,
+	parseSitemap,
+	type SitemapEntry,
+} from "./cache/sitemap";
 export { type CacheValidationResult, CacheValidator } from "./cache/validator";
 // Config
 export {
