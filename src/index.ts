@@ -117,11 +117,24 @@ export {
 	ExtractionStrategy,
 	NoExtractionStrategy,
 } from "./strategies/extraction/base";
+export { CodeExtractionStrategy } from "./strategies/extraction/code";
+export {
+	type CompositeExtractionConfig,
+	CompositeExtractionStrategy,
+	type ContentTypeMapping,
+	createCompositeExtraction,
+} from "./strategies/extraction/composite";
+export {
+	type ContentRegion,
+	type ContentType,
+	detectContentRegions,
+} from "./strategies/extraction/content-detector";
 export {
 	type CssExtractionSchema,
 	CssExtractionStrategy,
 	type CssField,
 } from "./strategies/extraction/css";
+export { ProseExtractionStrategy } from "./strategies/extraction/prose";
 export { RegexExtractionStrategy } from "./strategies/extraction/regex";
 // Additional Extraction
 export { TableExtractionStrategy } from "./strategies/extraction/table";
