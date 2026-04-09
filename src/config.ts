@@ -1,4 +1,5 @@
 import { CacheMode } from "./cache/mode";
+import type { HydrationConfig } from "./utils/hydration-detector";
 import type { Logger } from "./utils/logger";
 
 // ---------------------------------------------------------------------------
@@ -120,6 +121,15 @@ export interface CrawlerRunConfig {
 	simulateUser: boolean;
 	magicMode: boolean;
 	removeConsentPopups: boolean;
+
+	/**
+	 * Use hydration-aware readiness detection instead of fixed waitAfterLoad delays.
+	 * When enabled, automatically detects SPA frameworks and waits for content stability.
+	 * - `true`: use default hydration config
+	 * - object: use custom hydration config (merged with defaults)
+	 * - `false` / `undefined`: disabled
+	 */
+	hydrationDetection: Partial<HydrationConfig> | boolean;
 }
 
 export interface ExtractionStrategyConfig {
@@ -162,6 +172,8 @@ const DEFAULT_CRAWLER_RUN_CONFIG: CrawlerRunConfig = {
 	simulateUser: false,
 	magicMode: false,
 	removeConsentPopups: false,
+
+	hydrationDetection: false,
 };
 
 export function createCrawlerRunConfig(

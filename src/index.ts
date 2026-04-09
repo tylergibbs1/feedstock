@@ -155,6 +155,13 @@ export {
 	type TextDiff,
 } from "./utils/change-tracker";
 export { detectCursorInteractiveElements } from "./utils/cursor-interactive";
+export {
+	createHydrationConfig,
+	createHydrationDetectorScript,
+	type HydrationConfig,
+	type HydrationResult,
+	waitForHydration,
+} from "./utils/hydration-detector";
 export { type DashboardConfig, MonitorDashboard } from "./utils/dashboard";
 export { toFriendlyError, withFriendlyErrors } from "./utils/errors";
 export {
