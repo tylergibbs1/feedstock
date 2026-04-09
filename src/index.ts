@@ -29,16 +29,23 @@ export {
 export { WebCrawler, type WebCrawlerOptions } from "./crawler";
 // Deep Crawl
 export {
+	type BanditConfig,
+	BanditDeepCrawlStrategy,
+	type BanditGroupSnapshot,
+	BanditScorer,
 	BestFirstDeepCrawlStrategy,
 	BFSDeepCrawlStrategy,
 	CompositeScorer,
+	computeReward,
 	ContentTypeFilter,
+	createBanditConfig,
 	createDeepCrawlConfig,
 	type DeepCrawlConfig,
 	DeepCrawlStrategy,
 	DFSDeepCrawlStrategy,
 	DomainAuthorityScorer,
 	DomainFilter,
+	extractLinkGroup,
 	FilterChain,
 	type FilterResult,
 	type FilterStats,

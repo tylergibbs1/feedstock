@@ -1,4 +1,11 @@
 export {
+	type BanditConfig,
+	type BanditGroupSnapshot,
+	BanditScorer,
+	computeReward,
+	createBanditConfig,
+} from "./bandit-scorer";
+export {
 	ContentTypeFilter,
 	DomainFilter,
 	FilterChain,
@@ -18,6 +25,7 @@ export {
 	URLScorer,
 } from "./scorers";
 export {
+	BanditDeepCrawlStrategy,
 	BestFirstDeepCrawlStrategy,
 	BFSDeepCrawlStrategy,
 	createDeepCrawlConfig,
@@ -25,3 +33,4 @@ export {
 	DeepCrawlStrategy,
 	DFSDeepCrawlStrategy,
 } from "./strategy";
+export { extractLinkGroup } from "./tag-path";

@@ -12,6 +12,7 @@ import type { Logger } from "../utils/logger";
 import { SilentLogger } from "../utils/logger";
 import type { RateLimiter } from "../utils/rate-limiter";
 import type { RobotsParser } from "../utils/robots";
+import { type BanditConfig, BanditScorer, computeReward } from "./bandit-scorer";
 import type { FilterChain } from "./filters";
 import type { CompositeScorer, ScorerContext } from "./scorers";
 
@@ -396,6 +397,117 @@ export class BestFirstDeepCrawlStrategy extends DeepCrawlStrategy {
 		}
 
 		logger.info(`BestFirst complete: ${pageCount} pages crawled`);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Bandit (UCB1 Sleeping Bandits)
+// ---------------------------------------------------------------------------
+
+interface BanditScoredURL {
+	url: string;
+	depth: number;
+	score: number;
+	anchorText: string;
+	parentUrl: string;
+}
+
+export class BanditDeepCrawlStrategy extends DeepCrawlStrategy {
+	private readonly banditConfig: Partial<BanditConfig> | undefined;
+
+	constructor(banditConfig?: Partial<BanditConfig>) {
+		super("bandit");
+		this.banditConfig = banditConfig;
+	}
+
+	async run(
+		startUrl: string,
+		crawler: WebCrawler,
+		crawlConfig: Partial<CrawlerRunConfig>,
+		deepConfig: DeepCrawlConfig,
+	): Promise<CrawlResult[]> {
+		const results: CrawlResult[] = [];
+		for await (const result of this.stream(startUrl, crawler, crawlConfig, deepConfig)) {
+			results.push(result);
+		}
+		return results;
+	}
+
+	async *stream(
+		startUrl: string,
+		crawler: WebCrawler,
+		crawlConfig: Partial<CrawlerRunConfig>,
+		deepConfig: DeepCrawlConfig,
+	): AsyncGenerator<CrawlResult, void, unknown> {
+		const logger = deepConfig.logger ?? new SilentLogger();
+		const bandit = new BanditScorer(this.banditConfig);
+		const visited = new Set<string>();
+		const depths = new Map<string, number>();
+		let pageCount = 0;
+
+		// Priority queue sorted by UCB score (re-sorted each iteration).
+		const queue: BanditScoredURL[] = [
+			{ url: startUrl, depth: 0, score: bandit.score(startUrl, 0), anchorText: "", parentUrl: "" },
+		];
+
+		while (queue.length > 0 && pageCount < deepConfig.maxPages) {
+			// Re-score the entire frontier so UCB reflects latest stats.
+			for (const entry of queue) {
+				const ctx: ScorerContext = { anchorText: entry.anchorText, parentUrl: entry.parentUrl };
+				entry.score = bandit.score(entry.url, entry.depth, ctx);
+			}
+			queue.sort((a, b) => b.score - a.score);
+
+			const { url, depth } = queue.shift()!;
+
+			if (visited.has(url)) continue;
+			if (depth > deepConfig.maxDepth) continue;
+
+			visited.add(url);
+			depths.set(url, depth);
+
+			logger.debug(`Bandit depth ${depth} ucb ${bandit.score(url, depth).toFixed(2)}: ${url}`);
+
+			const result = await this.crawlWithRateLimit(
+				url,
+				crawler,
+				crawlConfig,
+				deepConfig.rateLimiter,
+			);
+			pageCount++;
+
+			// Update bandit with observed reward.
+			const reward = computeReward(result);
+			bandit.update(url, reward);
+
+			yield result;
+
+			if (result.success && depth < deepConfig.maxDepth) {
+				const discovered = await this.discoverLinks(result, visited, depth, depths, deepConfig);
+
+				for (const link of discovered) {
+					const context: ScorerContext = { anchorText: link.anchorText, parentUrl: url };
+					queue.push({
+						url: link.url,
+						depth: depth + 1,
+						score: bandit.score(link.url, depth + 1, context),
+						anchorText: link.anchorText,
+						parentUrl: url,
+					});
+				}
+			}
+		}
+
+		logger.info(`Bandit complete: ${pageCount} pages crawled`);
+
+		if (logger.debug) {
+			const stats = bandit.getStats();
+			for (const [group, snap] of stats) {
+				logger.debug(
+					`  group=${group} pulls=${snap.pulls} avg=${snap.avgReward.toFixed(3)} ucb=${snap.ucb.toFixed(3)}`,
+				);
+			}
+		}
 	}
 }
 
