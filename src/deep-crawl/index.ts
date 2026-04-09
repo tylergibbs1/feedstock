@@ -9,6 +9,11 @@ export {
 	URLPatternFilter,
 } from "./filters";
 export {
+	computePageQuality,
+	type NeuralScorerConfig,
+	NeuralQualityScorer,
+} from "./neural-scorer";
+export {
 	CompositeScorer,
 	DomainAuthorityScorer,
 	FreshnessScorer,
