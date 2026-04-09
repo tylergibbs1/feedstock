@@ -11,15 +11,15 @@
 ## Features
 
 - **Single & multi-page crawling** with concurrent execution
-- **Deep crawling** — BFS, DFS, and BestFirst traversal strategies
-- **Content extraction** — CSS selectors, regex, XPath, table, and accessibility tree extraction
+- **Deep crawling** — BFS, DFS, BestFirst, Bandit (UCB1 online learning), and Focused (RL/Q-learning) strategies
+- **Content extraction** — CSS selectors, regex, XPath, table, accessibility tree, and composite multi-strategy extraction
 - **Markdown generation** with citation support
-- **Smart caching** with ETag/Last-Modified validation via `bun:sqlite`
+- **Smart caching** with ETag/Last-Modified validation via `bun:sqlite` and multi-signal freshness evaluation (sitemap, HTTP headers, content hash, time decay)
 - **URL filtering** — pattern, domain, and content-type filters
-- **URL scoring** — keyword relevance, path depth, freshness, domain authority
+- **URL scoring** — keyword relevance, path depth, freshness, domain authority, neural quality estimation (online-learning), and UCB1 bandit scoring
 - **Rate limiting** — per-domain with exponential backoff
 - **Robots.txt** parsing and compliance
-- **Built-in stealth mode** — one flag enables random user-agents, navigator.webdriver override, plugin/language spoofing, human-like mouse/scroll simulation
+- **Built-in stealth mode** — one flag enables random user-agents, navigator.webdriver override, plugin/language spoofing, human-like mouse/scroll simulation. Enhanced mode generates spatially-consistent fingerprint profiles (UA, platform, WebGL, screen, canvas all agree)
 - **Anti-bot detection** with auto-retry on blocked pages
 - **Multiple browser backends** — Playwright (Chromium/Firefox/WebKit), generic CDP (Browserbase, Browserless, etc.), or [Lightpanda](https://lightpanda.io) (local/cloud)
 - **Proxy rotation** — round-robin strategy with health tracking
@@ -33,7 +33,8 @@
 - **AI-friendly errors** — converts 20+ error patterns into actionable messages
 - **Hooks** — inject custom behavior at 5 lifecycle points (page created, before/after navigation, etc.)
 - **Resource blocking** — named profiles (`fast`, `minimal`, `media-only`) or custom patterns for faster crawls
-- **Navigation strategies** — configurable `waitUntil`: `commit` (fastest), `domcontentloaded`, `load`, `networkidle`
+- **Navigation strategies** — configurable `waitUntil`: `commit` (fastest), `domcontentloaded`, `load`, `networkidle`. Hydration-aware readiness detection auto-detects SPA frameworks and waits for content stability instead of fixed timeouts
+- **DOM downsampling** — preprocess HTML to reduce DOM size before extraction (strips boilerplate, collapses containers, filters attributes). 30-85% size reduction depending on page complexity
 - **In-page extraction** — extract links/media/metadata directly in the browser via `page.evaluate()`, skipping HTML serialization
 - **Change tracking** — detect new/changed/unchanged/removed pages between crawl runs with text diffs
 - **User-agent rotation** — pool of 9 realistic browser user-agents with round-robin rotation
