@@ -131,6 +131,12 @@ export {
 	type XPathField,
 } from "./strategies/extraction/xpath";
 export {
+	createDomDownsamplingConfig,
+	DEFAULT_DOM_DOWNSAMPLING_CONFIG,
+	type DomDownsamplingConfig,
+	DomDownsampler,
+} from "./strategies/dom-downsampling";
+export {
 	DefaultMarkdownGenerator,
 	MarkdownGenerationStrategy,
 } from "./strategies/markdown";

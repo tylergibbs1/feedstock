@@ -1,4 +1,5 @@
 import { CacheMode } from "./cache/mode";
+import type { DomDownsamplingConfig } from "./strategies/dom-downsampling";
 import type { Logger } from "./utils/logger";
 
 // ---------------------------------------------------------------------------
@@ -120,6 +121,9 @@ export interface CrawlerRunConfig {
 	simulateUser: boolean;
 	magicMode: boolean;
 	removeConsentPopups: boolean;
+
+	// DOM downsampling
+	domDownsampling: Partial<DomDownsamplingConfig> | null;
 }
 
 export interface ExtractionStrategyConfig {
@@ -162,6 +166,8 @@ const DEFAULT_CRAWLER_RUN_CONFIG: CrawlerRunConfig = {
 	simulateUser: false,
 	magicMode: false,
 	removeConsentPopups: false,
+
+	domDownsampling: null,
 };
 
 export function createCrawlerRunConfig(
