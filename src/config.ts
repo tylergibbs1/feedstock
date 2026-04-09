@@ -1,3 +1,4 @@
+import type { ProfilePreset } from "./browser/fingerprint";
 import { CacheMode } from "./cache/mode";
 import type { Logger } from "./utils/logger";
 
@@ -28,6 +29,8 @@ export interface BrowserConfig {
 	backend: BrowserBackend;
 	/** Enable stealth mode: randomize user-agent, override navigator.webdriver, simulate human behavior */
 	stealth: boolean;
+	/** Fingerprint preset for stealth mode. Uses random consistent profile if not set. */
+	fingerprintPreset?: ProfilePreset;
 }
 
 export interface ProxyConfig {

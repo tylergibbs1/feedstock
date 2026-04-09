@@ -1,5 +1,14 @@
 // Core
 
+// Browser fingerprint consistency
+export {
+	applyEnhancedStealth,
+	applyFingerprintProfile,
+	type FingerprintProfile,
+	generateProfile,
+	generateRandomProfile,
+	type ProfilePreset,
+} from "./browser/fingerprint";
 export { CrawlCache, contentHash } from "./cache/database";
 // Cache
 export { CacheMode } from "./cache/mode";
