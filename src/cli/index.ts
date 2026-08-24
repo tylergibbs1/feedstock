@@ -12,18 +12,22 @@ import { runCache } from "./commands/cache";
 import { runCrawl } from "./commands/crawl";
 import { runCrawlMany } from "./commands/crawl-many";
 import { runDeepCrawl } from "./commands/deep-crawl";
+import { runMap } from "./commands/map";
 import { runMonitor } from "./commands/monitor";
 import { runProcess } from "./commands/process";
 import { runSchema } from "./commands/schema";
+import { runScrape } from "./commands/scrape";
 import { exitUsageError } from "./errors";
 import type { ParsedArgs } from "./parse-args";
 import { parseArgs } from "./parse-args";
 import { renderHelp, SCHEMAS } from "./schema";
 
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 
 const COMMANDS: Record<string, (args: ParsedArgs, config: LayeredConfig) => Promise<void>> = {
 	crawl: runCrawl,
+	scrape: runScrape,
+	map: runMap,
 	"crawl-many": runCrawlMany,
 	"deep-crawl": runDeepCrawl,
 	process: runProcess,
@@ -50,7 +54,7 @@ async function main() {
 	if (args.flags.help) {
 		const schema = SCHEMAS[args.command];
 		if (schema) {
-			process.stdout.write(renderHelp(schema) + "\n");
+			process.stdout.write(`${renderHelp(schema)}\n`);
 		} else {
 			exitUsageError(
 				`Unknown command: ${args.command}`,
@@ -94,18 +98,20 @@ function printGlobalHelp(): void {
 	lines.push("");
 	lines.push("Examples:");
 	lines.push("  feedstock crawl https://example.com");
+	lines.push("  feedstock scrape https://example.com --formats markdown,links");
+	lines.push("  feedstock map https://example.com --limit 1000");
 	lines.push("  feedstock crawl https://example.com --output json --fields url,markdown");
 	lines.push("  feedstock deep-crawl https://docs.example.com --max-depth 2 --max-pages 50");
 	lines.push("  feedstock schema crawl");
 	lines.push("");
 	lines.push("Config: feedstock.json, FEEDSTOCK_* env vars, or --json flag");
 
-	process.stdout.write(lines.join("\n") + "\n");
+	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
 main().catch((err) => {
 	process.stderr.write(
-		JSON.stringify({ error: true, code: "UNHANDLED", message: String(err) }) + "\n",
+		`${JSON.stringify({ error: true, code: "UNHANDLED", message: String(err) })}\n`,
 	);
 	process.exit(1);
 });

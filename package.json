@@ -52,16 +52,16 @@
     "prepublishOnly": "bun run check && bun test tests/unit"
   },
   "dependencies": {
-    "playwright": "^1.52.0",
-    "turndown": "^7.2.0",
-    "cheerio": "^1.0.0"
+    "cheerio": "^1.0.0",
+    "playwright": "1.62.1",
+    "turndown": "^7.2.0"
   },
   "optionalDependencies": {
-    "@lightpanda/browser": "^1.0.0"
+    "@lightpanda/browser": "1.5.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.10",
-    "@types/bun": "latest",
+    "@biomejs/biome": "2.5.10",
+    "@types/bun": "1.4.0",
     "@types/turndown": "^5.0.5",
     "typescript": "^5.8.0"
   },

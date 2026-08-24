@@ -6,7 +6,7 @@
  */
 
 interface DomainState {
-	lastRequestTime: number;
+	nextRequestTime: number;
 	currentDelay: number;
 	failCount: number;
 }
@@ -39,29 +39,31 @@ export class RateLimiter {
 	 * Wait if needed before making a request to this URL's domain.
 	 * Returns the actual wait time in ms (0 if no wait was needed).
 	 */
-	async waitIfNeeded(url: string): Promise<number> {
+	async waitIfNeeded(url: string, signal?: AbortSignal): Promise<number> {
 		const domain = this.getDomain(url);
 		if (!domain) return 0;
 
+		const now = Date.now();
 		const state = this.domains.get(domain);
 		if (!state) {
 			this.domains.set(domain, {
-				lastRequestTime: Date.now(),
+				nextRequestTime: now + this.config.baseDelay,
 				currentDelay: this.config.baseDelay,
 				failCount: 0,
 			});
 			return 0;
 		}
 
-		const elapsed = Date.now() - state.lastRequestTime;
-		const delay = state.currentDelay + this.getJitter(state.currentDelay);
-		const waitTime = Math.max(0, delay - elapsed);
+		const scheduledAt = Math.max(now, state.nextRequestTime);
+		const waitTime = scheduledAt - now;
+		const delay = Math.max(0, state.currentDelay + this.getJitter(state.currentDelay));
+		// Reserve the slot before awaiting so concurrent workers cannot all wake at once.
+		state.nextRequestTime = scheduledAt + delay;
 
 		if (waitTime > 0) {
-			await Bun.sleep(waitTime);
+			await sleepWithSignal(waitTime, signal);
 		}
 
-		state.lastRequestTime = Date.now();
 		return waitTime;
 	}
 
@@ -69,14 +71,14 @@ export class RateLimiter {
 	 * Report the result of a request. Adjusts backoff accordingly.
 	 * Returns true if the delay was increased (caller may want to retry).
 	 */
-	reportResult(url: string, statusCode: number): boolean {
+	reportResult(url: string, statusCode: number, retryAfter?: string | number): boolean {
 		const domain = this.getDomain(url);
 		if (!domain) return false;
 
 		let state = this.domains.get(domain);
 		if (!state) {
 			state = {
-				lastRequestTime: Date.now(),
+				nextRequestTime: Date.now(),
 				currentDelay: this.config.baseDelay,
 				failCount: 0,
 			};
@@ -90,6 +92,14 @@ export class RateLimiter {
 				state.currentDelay * this.config.backoffFactor,
 				this.config.maxDelay,
 			);
+			const retryAfterMs = parseRetryAfter(retryAfter);
+			if (retryAfterMs !== null) {
+				state.currentDelay = Math.min(
+					this.config.maxDelay,
+					Math.max(state.currentDelay, retryAfterMs),
+				);
+			}
+			state.nextRequestTime = Math.max(state.nextRequestTime, Date.now() + state.currentDelay);
 			return true;
 		}
 
@@ -124,12 +134,14 @@ export class RateLimiter {
 		if (!domain) return;
 
 		const state = this.domains.get(domain);
+		const boundedDelay = Math.min(Math.max(0, delayMs), this.config.maxDelay);
 		if (state) {
-			state.currentDelay = Math.min(delayMs, this.config.maxDelay);
+			state.currentDelay = boundedDelay;
+			state.nextRequestTime = Math.max(state.nextRequestTime, Date.now() + boundedDelay);
 		} else {
 			this.domains.set(domain, {
-				lastRequestTime: 0,
-				currentDelay: Math.min(delayMs, this.config.maxDelay),
+				nextRequestTime: Date.now(),
+				currentDelay: boundedDelay,
 				failCount: 0,
 			});
 		}
@@ -151,4 +163,30 @@ export class RateLimiter {
 		if (this.config.jitter === 0) return 0;
 		return (Math.random() - 0.5) * 2 * this.config.jitter * baseValue;
 	}
+}
+
+function parseRetryAfter(value: string | number | undefined): number | null {
+	if (value === undefined) return null;
+	if (typeof value === "number") return Math.max(0, value);
+	const seconds = Number(value);
+	if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+	const date = Date.parse(value);
+	return Number.isNaN(date) ? null : Math.max(0, date - Date.now());
+}
+
+function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+	if (!signal) return Bun.sleep(ms);
+	signal.throwIfAborted();
+	return new Promise((resolve, reject) => {
+		const timeout = setTimeout(done, ms);
+		function done() {
+			signal?.removeEventListener("abort", aborted);
+			resolve();
+		}
+		function aborted() {
+			clearTimeout(timeout);
+			reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+		}
+		signal.addEventListener("abort", aborted, { once: true });
+	});
 }

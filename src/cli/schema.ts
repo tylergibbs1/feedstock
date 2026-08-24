@@ -83,6 +83,34 @@ const CRAWL_FLAGS: Record<string, FlagDef> = {
 		default: "domcontentloaded",
 		description: "Navigation wait strategy",
 	},
+	"only-main-content": {
+		type: "boolean",
+		default: false,
+		description: "Extract the primary page content and remove surrounding chrome",
+	},
+	"remove-base64-images": {
+		type: "boolean",
+		default: false,
+		description: "Omit inline base64 images from media output",
+	},
+	"cache-max-age": {
+		type: "number",
+		default: 172800000,
+		description: "Maximum acceptable cached result age in ms",
+	},
+	"max-response-bytes": {
+		type: "number",
+		default: 10485760,
+		description: "Maximum response body size accepted by the fetch engine",
+	},
+	header: { type: "string[]", description: "Request header as Name:Value (repeatable)" },
+	"max-attempts": { type: "number", default: 3, description: "Total fetch attempts" },
+	magic: {
+		type: "boolean",
+		default: false,
+		description: "Enable consent removal, user simulation, and safe resource blocking",
+	},
+	actions: { type: "string", description: "Declarative browser actions as a JSON array" },
 };
 
 export const SCHEMAS: Record<string, CommandSchema> = {
@@ -91,6 +119,50 @@ export const SCHEMAS: Record<string, CommandSchema> = {
 		description: "Crawl a single page and extract content",
 		args: [{ name: "url", required: true, type: "string", description: "URL to crawl" }],
 		flags: CRAWL_FLAGS,
+	},
+	scrape: {
+		name: "scrape",
+		description: "Scrape a page into a concise set of requested formats",
+		args: [{ name: "url", required: true, type: "string", description: "URL to scrape" }],
+		flags: {
+			...CRAWL_FLAGS,
+			formats: {
+				type: "string[]",
+				default: "markdown",
+				description: "markdown, html, rawHtml, links, images, screenshot, pdf, snapshot, json",
+			},
+		},
+	},
+	map: {
+		name: "map",
+		description: "Discover and deduplicate a site's URL surface",
+		args: [{ name: "url", required: true, type: "string", description: "Site URL to map" }],
+		flags: {
+			...COMMON_FLAGS,
+			limit: { type: "number", default: 5000, description: "Maximum URLs to return" },
+			sitemap: {
+				type: "enum",
+				values: ["include", "skip", "only"],
+				default: "include",
+				description: "How sitemap discovery should be used",
+			},
+			"include-subdomains": {
+				type: "boolean",
+				default: false,
+				description: "Include URLs on subdomains",
+			},
+			"ignore-query-parameters": {
+				type: "boolean",
+				default: false,
+				description: "Deduplicate URLs without their query strings",
+			},
+			"page-links": {
+				type: "boolean",
+				default: true,
+				description: "Include links found on the start page (use --no-page-links to disable)",
+			},
+			timeout: { type: "number", default: 15000, description: "Sitemap request timeout in ms" },
+		},
 	},
 	"crawl-many": {
 		name: "crawl-many",

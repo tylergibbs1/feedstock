@@ -73,21 +73,58 @@ export type BlockResourcesConfig =
 	| ResourceBlockProfile
 	| { patterns?: string[]; resourceTypes?: string[] };
 
+export type BrowserAction =
+	| { type: "wait"; milliseconds?: number; selector?: string; timeout?: number }
+	| { type: "click"; selector: string; timeout?: number }
+	| { type: "fill"; selector: string; value: string; timeout?: number }
+	| { type: "write"; text: string }
+	| { type: "press"; key: string; selector?: string }
+	| { type: "scroll"; direction: "up" | "down"; amount?: number; selector?: string }
+	| { type: "screenshot"; fullPage?: boolean; quality?: number }
+	| { type: "scrape" }
+	| { type: "executeJavascript"; script: string };
+
+export interface RequestRetryConfig {
+	/** Total attempts, including the first request. */
+	maxAttempts: number;
+	baseDelayMs: number;
+	maxDelayMs: number;
+	jitter: number;
+	statuses: number[];
+	respectRetryAfter: boolean;
+}
+
+export type ContentFilterConfig =
+	| { type: "pruning"; minWords?: number }
+	| { type: "bm25"; query: string; threshold?: number };
+
 export interface CrawlerRunConfig {
 	// Content
 	wordCountThreshold: number;
 	excludeTags: string[];
 	includeTags: string[];
 	removeOverlayElements: boolean;
+	onlyMainContent: boolean;
+	contentFilter: ContentFilterConfig | null;
+	removeBase64Images: boolean;
 
 	// Caching
 	cacheMode: CacheMode;
+	/** Maximum acceptable cache age. null keeps entries indefinitely. */
+	cacheMaxAgeMs: number | null;
 
 	// Browser behavior
 	jsCode: string | string[] | null;
 	waitFor: WaitForType | null;
 	waitAfterLoad: number;
 	pageTimeout: number;
+	/** Maximum response body accepted by the fetch engine. */
+	maxResponseBytes: number;
+	headers: Record<string, string>;
+	actions: BrowserAction[];
+	/** Optional caller cancellation signal. */
+	signal: AbortSignal | null;
+	retry: RequestRetryConfig;
 	/** Navigation wait strategy: "domcontentloaded" (default), "load", "networkidle", or "commit" (fastest) */
 	navigationWaitUntil: "domcontentloaded" | "load" | "networkidle" | "commit";
 
@@ -127,18 +164,39 @@ export interface ExtractionStrategyConfig {
 	params: Record<string, unknown>;
 }
 
+/** Public per-crawl overrides; nested retry settings may be supplied partially. */
+export type CrawlerRunConfigOverrides = Omit<Partial<CrawlerRunConfig>, "retry"> & {
+	retry?: Partial<RequestRetryConfig>;
+};
+
 const DEFAULT_CRAWLER_RUN_CONFIG: CrawlerRunConfig = {
 	wordCountThreshold: 10,
 	excludeTags: [],
 	includeTags: [],
 	removeOverlayElements: false,
+	onlyMainContent: false,
+	contentFilter: null,
+	removeBase64Images: false,
 
 	cacheMode: CacheMode.Enabled,
+	cacheMaxAgeMs: 48 * 60 * 60 * 1000,
 
 	jsCode: null,
 	waitFor: null,
 	waitAfterLoad: 0,
 	pageTimeout: 60_000,
+	maxResponseBytes: 10 * 1024 * 1024,
+	headers: {},
+	actions: [],
+	signal: null,
+	retry: {
+		maxAttempts: 3,
+		baseDelayMs: 500,
+		maxDelayMs: 10_000,
+		jitter: 0.2,
+		statuses: [408, 425, 429, 500, 502, 503, 504],
+		respectRetryAfter: true,
+	},
 	navigationWaitUntil: "domcontentloaded",
 
 	screenshot: false,
@@ -165,7 +223,20 @@ const DEFAULT_CRAWLER_RUN_CONFIG: CrawlerRunConfig = {
 };
 
 export function createCrawlerRunConfig(
-	overrides: Partial<CrawlerRunConfig> = {},
+	overrides: CrawlerRunConfigOverrides = {},
 ): CrawlerRunConfig {
-	return { ...DEFAULT_CRAWLER_RUN_CONFIG, ...overrides };
+	const config: CrawlerRunConfig = {
+		...DEFAULT_CRAWLER_RUN_CONFIG,
+		...overrides,
+		headers: { ...DEFAULT_CRAWLER_RUN_CONFIG.headers, ...overrides.headers },
+		retry: { ...DEFAULT_CRAWLER_RUN_CONFIG.retry, ...overrides.retry },
+	};
+
+	if (config.magicMode) {
+		config.removeConsentPopups = overrides.removeConsentPopups ?? true;
+		config.simulateUser = overrides.simulateUser ?? true;
+		config.blockResources = overrides.blockResources ?? "media-only";
+	}
+
+	return config;
 }

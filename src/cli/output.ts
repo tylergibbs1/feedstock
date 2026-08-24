@@ -34,10 +34,10 @@ export function emitResult(result: CrawlResult, mode: OutputMode, fields?: strin
 
 	switch (mode) {
 		case "json":
-			process.stdout.write(JSON.stringify(data, null, 2) + "\n");
+			process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 			break;
 		case "ndjson":
-			process.stdout.write(JSON.stringify(data) + "\n");
+			process.stdout.write(`${JSON.stringify(data)}\n`);
 			break;
 		case "text":
 			emitText(result, data);
@@ -49,7 +49,7 @@ export function emitResult(result: CrawlResult, mode: OutputMode, fields?: strin
 export function emitResults(results: CrawlResult[], mode: OutputMode, fields?: string[]): void {
 	if (mode === "json") {
 		const data = results.map((r) => filterFields(r, fields));
-		process.stdout.write(JSON.stringify(data, null, 2) + "\n");
+		process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 	} else {
 		for (const result of results) {
 			emitResult(result, mode, fields);
@@ -57,7 +57,7 @@ export function emitResults(results: CrawlResult[], mode: OutputMode, fields?: s
 	}
 }
 
-function emitText(result: CrawlResult, data: Record<string, unknown>): void {
+function emitText(result: CrawlResult, _data: Record<string, unknown>): void {
 	const lines: string[] = [];
 	lines.push(`URL: ${result.url}`);
 	lines.push(`Status: ${result.statusCode ?? "N/A"} | Success: ${result.success}`);
@@ -83,10 +83,25 @@ function emitText(result: CrawlResult, data: Record<string, unknown>): void {
 	}
 
 	lines.push("---");
-	process.stdout.write(lines.join("\n") + "\n");
+	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
 /** Write arbitrary JSON to stdout */
 export function emitJSON(data: unknown): void {
-	process.stdout.write(JSON.stringify(data, null, 2) + "\n");
+	process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+}
+
+/** Write an arbitrary command result while preserving common CLI output semantics. */
+export function emitData(data: object, mode: OutputMode, fields?: string[], text?: string): void {
+	const record = data as Record<string, unknown>;
+	const filtered = fields
+		? Object.fromEntries(
+				fields.filter((field) => field in record).map((field) => [field, record[field]]),
+			)
+		: record;
+	if (mode === "text") {
+		process.stdout.write(`${text ?? JSON.stringify(filtered, null, 2)}\n`);
+		return;
+	}
+	process.stdout.write(`${JSON.stringify(filtered, null, mode === "json" ? 2 : undefined)}\n`);
 }

@@ -20,6 +20,9 @@ export class CheerioScrapingStrategy extends ContentScrapingStrategy {
 			includeTags: config.includeTags,
 			cssSelector: config.cssSelector,
 			removeOverlayElements: config.removeOverlayElements,
+			onlyMainContent: config.onlyMainContent,
+			wordCountThreshold: config.wordCountThreshold,
+			removeBase64Images: config.removeBase64Images,
 		});
 
 		return {

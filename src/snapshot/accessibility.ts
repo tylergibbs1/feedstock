@@ -309,8 +309,8 @@ export function buildStaticSnapshot(html: string): PageSnapshot {
 	const tree: SnapshotNode[] = [];
 
 	// Extract headings
-	$("h1, h2, h3, h4, h5, h6").each((_: number, el: any) => {
-		const tag = el.tagName as string;
+	$("h1, h2, h3, h4, h5, h6").each((_, el) => {
+		const tag = el.tagName;
 		const level = parseInt(tag[1], 10);
 		const text = $(el).text().trim();
 		if (!text) return;
@@ -322,7 +322,7 @@ export function buildStaticSnapshot(html: string): PageSnapshot {
 	});
 
 	// Extract links
-	$("a[href]").each((_: number, el: any) => {
+	$("a[href]").each((_, el) => {
 		const text = $(el).text().trim();
 		const href = $(el).attr("href") ?? "";
 		if (!text || href.startsWith("#") || href.startsWith("javascript:")) return;
@@ -334,7 +334,7 @@ export function buildStaticSnapshot(html: string): PageSnapshot {
 	});
 
 	// Extract buttons
-	$("button, input[type='submit'], input[type='button']").each((_: number, el: any) => {
+	$("button, input[type='submit'], input[type='button']").each((_, el) => {
 		const text = $(el).text().trim() || $(el).attr("value") || "";
 		if (!text) return;
 
@@ -346,7 +346,7 @@ export function buildStaticSnapshot(html: string): PageSnapshot {
 
 	// Extract inputs
 	$("input:not([type='hidden']):not([type='submit']):not([type='button']), textarea, select").each(
-		(_: number, el: any) => {
+		(_, el) => {
 			const type = $(el).attr("type") ?? "text";
 			const name =
 				$(el).attr("aria-label") ?? $(el).attr("placeholder") ?? $(el).attr("name") ?? "";
@@ -377,7 +377,7 @@ export function buildStaticSnapshot(html: string): PageSnapshot {
 	);
 
 	// Extract images with alt text
-	$("img[alt]").each((_: number, el: any) => {
+	$("img[alt]").each((_, el) => {
 		const alt = $(el).attr("alt")?.trim();
 		if (!alt) return;
 
@@ -388,7 +388,7 @@ export function buildStaticSnapshot(html: string): PageSnapshot {
 	});
 
 	// Extract paragraphs (summarized)
-	$("p").each((_: number, el: any) => {
+	$("p").each((_, el) => {
 		const text = $(el).text().trim();
 		if (!text || text.length < 20) return;
 

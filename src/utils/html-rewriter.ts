@@ -1,10 +1,17 @@
 /**
- * Bun-native HTMLRewriter-based extraction.
- * Streaming parser — no DOM tree allocation.
- * Replaces Cheerio for link, media, and metadata extraction in the hot path.
+ * Optional Bun-native HTMLRewriter extraction for streaming/low-memory callers.
+ * The default scraper uses a shared Cheerio document because it also performs
+ * DOM cleanup; this utility remains useful when no DOM mutations are required.
  */
 
-type LinkData = { href: string; text: string; title: string; baseDomain: string };
+type LinkData = {
+	href: string;
+	text: string;
+	title: string;
+	baseDomain: string;
+	rel?: string[];
+	nofollow?: boolean;
+};
 type MediaData = {
 	src: string;
 	alt: string;
@@ -29,6 +36,7 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 	const metadata: Record<string, unknown> = {};
 
 	let baseDomain = "";
+	let documentBaseUrl = baseUrl;
 	try {
 		baseDomain = new URL(baseUrl).hostname;
 	} catch {}
@@ -52,7 +60,9 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 	let currentLinkText = "";
 	let currentLinkHref = "";
 	let currentLinkTitle = "";
+	let currentLinkRel: string[] = [];
 	let inLink = false;
+	const seenLinks = new Set<string>();
 
 	const rewriter = new HTMLRewriter()
 		// Title
@@ -124,20 +134,33 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 				if (lang) metadata.language = lang;
 			},
 		})
+		.on("base[href]", {
+			element(el) {
+				const href = el.getAttribute("href");
+				if (!href) return;
+				try {
+					documentBaseUrl = new URL(href, baseUrl).href;
+				} catch {}
+			},
+		})
 		// Links (<a>)
 		.on("a[href]", {
 			element(el) {
 				currentLinkHref = el.getAttribute("href") ?? "";
 				currentLinkTitle = el.getAttribute("title") ?? "";
+				currentLinkRel = (el.getAttribute("rel") ?? "")
+					.split(/\s+/)
+					.map((value) => value.toLowerCase())
+					.filter(Boolean);
 				currentLinkText = "";
 				inLink = true;
+				el.onEndTag(() => {
+					inLink = false;
+					processLink();
+				});
 			},
 			text(t) {
 				if (inLink) currentLinkText += t.text;
-				if (t.lastInTextNode) {
-					inLink = false;
-					processLink();
-				}
 			},
 		})
 		// Canonical + alternates + feeds + favicons
@@ -177,7 +200,7 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 
 				let absoluteSrc: string;
 				try {
-					absoluteSrc = new URL(src, baseUrl).href;
+					absoluteSrc = new URL(src, documentBaseUrl).href;
 				} catch {
 					absoluteSrc = src;
 				}
@@ -213,7 +236,7 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 				if (!src) return;
 				let absoluteSrc: string;
 				try {
-					absoluteSrc = new URL(src, baseUrl).href;
+					absoluteSrc = new URL(src, documentBaseUrl).href;
 				} catch {
 					absoluteSrc = src;
 				}
@@ -236,7 +259,7 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 				if (!src) return;
 				let absoluteSrc: string;
 				try {
-					absoluteSrc = new URL(src, baseUrl).href;
+					absoluteSrc = new URL(src, documentBaseUrl).href;
 				} catch {
 					absoluteSrc = src;
 				}
@@ -285,10 +308,12 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 
 		let absoluteUrl: string;
 		try {
-			absoluteUrl = new URL(href, baseUrl).href;
+			absoluteUrl = new URL(href, documentBaseUrl).href;
 		} catch {
 			return;
 		}
+		if (seenLinks.has(absoluteUrl)) return;
+		seenLinks.add(absoluteUrl);
 
 		const text = currentLinkText.trim();
 		let linkDomain: string;
@@ -303,6 +328,8 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 			text,
 			title: currentLinkTitle.trim(),
 			baseDomain: linkDomain,
+			rel: currentLinkRel,
+			nofollow: currentLinkRel.includes("nofollow"),
 		};
 
 		if (linkDomain === baseDomain) {
@@ -328,6 +355,21 @@ export function extractAllStreaming(html: string, baseUrl: string) {
 	if (feeds.length > 0) metadata.feeds = feeds;
 	if (favicons.length > 0) metadata.favicons = favicons;
 	if (jsonLdScripts.length > 0) metadata.jsonLd = jsonLdScripts;
+
+	for (const key of ["canonical", "amphtml", "ogImage", "ogUrl", "twitterImage"]) {
+		const value = metadata[key];
+		if (typeof value !== "string") continue;
+		try {
+			metadata[key] = new URL(value, documentBaseUrl).href;
+		} catch {}
+	}
+	for (const items of [alternates, feeds, favicons]) {
+		for (const item of items) {
+			try {
+				item.href = new URL(item.href, documentBaseUrl).href;
+			} catch {}
+		}
+	}
 
 	metadata.publishedTime = metadata.articlePublishedTime ?? null;
 	metadata.modifiedTime = metadata.articleModifiedTime ?? null;

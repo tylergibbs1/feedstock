@@ -11,15 +11,18 @@
 ## Features
 
 - **Single & multi-page crawling** with concurrent execution
-- **Deep crawling** — BFS, DFS, BestFirst, Bandit (UCB1 online learning), and Focused (RL/Q-learning) strategies
+- **Deep crawling** — BFS, DFS, and relevance-scored BestFirst strategies
 - **Content extraction** — CSS selectors, regex, XPath, table, accessibility tree, and composite multi-strategy extraction
-- **Markdown generation** with citation support
-- **Smart caching** with ETag/Last-Modified validation via `bun:sqlite` and multi-signal freshness evaluation (sitemap, HTTP headers, content hash, time decay)
+- **Format-driven scraping** — request only `markdown`, `html`, `rawHtml`, `links`, `images`, `screenshot`, `pdf`, `snapshot`, or structured `json`
+- **Markdown generation** with deduplicated citations, real tables, absolute URLs, and optional pruning/BM25 fit-markdown
+- **Configuration-aware caching** with a two-day freshness default, content hashes, ETag/Last-Modified storage, and isolated cache identities for different extraction settings
+- **Canonical URL identity** — fragments and tracking parameters are removed, query parameters are sorted, and query-insensitive deduplication is opt-in
+- **Site mapping** from robots.txt, nested/gzipped sitemaps, and start-page links
 - **URL filtering** — pattern, domain, and content-type filters
-- **URL scoring** — keyword relevance, path depth, freshness, domain authority, neural quality estimation (online-learning), and UCB1 bandit scoring
-- **Rate limiting** — per-domain with exponential backoff
+- **URL scoring** — keyword relevance, path depth, freshness, domain authority, and weighted composite scoring
+- **Rate limiting** — concurrent per-domain reservations, exponential backoff, crawl-delay, and Retry-After support
 - **Robots.txt** parsing and compliance
-- **Built-in stealth mode** — one flag enables random user-agents, navigator.webdriver override, plugin/language spoofing, human-like mouse/scroll simulation. Enhanced mode generates spatially-consistent fingerprint profiles (UA, platform, WebGL, screen, canvas all agree)
+- **Built-in stealth mode** — random user-agents, navigator overrides, plugin/language spoofing, and human-like mouse/scroll simulation
 - **Anti-bot detection** with auto-retry on blocked pages
 - **Multiple browser backends** — Playwright (Chromium/Firefox/WebKit), generic CDP (Browserbase, Browserless, etc.), or [Lightpanda](https://lightpanda.io) (local/cloud)
 - **Proxy rotation** — round-robin strategy with health tracking
@@ -33,14 +36,14 @@
 - **AI-friendly errors** — converts 20+ error patterns into actionable messages
 - **Hooks** — inject custom behavior at 5 lifecycle points (page created, before/after navigation, etc.)
 - **Resource blocking** — named profiles (`fast`, `minimal`, `media-only`) or custom patterns for faster crawls
-- **Navigation strategies** — configurable `waitUntil`: `commit` (fastest), `domcontentloaded`, `load`, `networkidle`. Hydration-aware readiness detection auto-detects SPA frameworks and waits for content stability instead of fixed timeouts
-- **DOM downsampling** — preprocess HTML to reduce DOM size before extraction (strips boilerplate, collapses containers, filters attributes). 30-85% size reduction depending on page complexity
+- **Navigation strategies** — configurable `waitUntil`: `commit` (fastest), `domcontentloaded`, `load`, or `networkidle`, plus selector/function/delay waits
 - **In-page extraction** — extract links/media/metadata directly in the browser via `page.evaluate()`, skipping HTML serialization
 - **Change tracking** — detect new/changed/unchanged/removed pages between crawl runs with text diffs
 - **User-agent rotation** — pool of 9 realistic browser user-agents with round-robin rotation
 - **Graceful shutdown** — SIGINT/SIGTERM handlers auto-close browser processes
-- **Session management** — LRU eviction at 20 concurrent sessions, cache TTL pruning
-- **Input validation** — friendly error messages for invalid URLs, automatic retry on transient network errors
+- **Session management** — persistent named sessions with LRU eviction at 20 concurrent sessions
+- **Safe fetching** — caller cancellation, custom headers, configurable transient/status retries, Retry-After, content-type validation, timeouts, and response-size limits
+- **Declarative browser actions** — wait, click, fill, write, press, scroll, scrape, screenshot, and JavaScript execution
 - **Layered config** — `feedstock.json` project file + `FEEDSTOCK_*` environment variables with programmatic overrides
 - **Incremental crawling** — content hashing in cache detects unchanged pages via `cache.hasChanged()`
 - **Benchmarking** — scenario-based benchmark suite with warmup, p50/stddev stats, and JSON output
@@ -60,6 +63,12 @@ bunx playwright install chromium
 # Single page
 feedstock crawl https://example.com
 feedstock crawl https://example.com --fields url,markdown --output json
+
+# Concise format-driven output (main content by default)
+feedstock scrape https://example.com --formats markdown,links,images
+
+# Discover a site's canonical URL surface
+feedstock map https://example.com --limit 1000 --ignore-query-parameters
 
 # Batch crawl
 echo "https://a.com\nhttps://b.com" | feedstock crawl-many --stdin --concurrency 10
@@ -88,19 +97,59 @@ bunx playwright install chromium
 ```
 
 ```typescript
-import { WebCrawler, CacheMode } from "feedstock";
+import { WebCrawler } from "feedstock";
 
-const crawler = new WebCrawler();
+await using crawler = new WebCrawler();
 
-const result = await crawler.crawl("https://example.com", {
-  cacheMode: CacheMode.Bypass,
+const page = await crawler.scrape("https://example.com", {
+  formats: ["markdown", "links", "images"],
+  contentFilter: { type: "pruning", minWords: 8 },
 });
 
-console.log(result.markdown?.rawMarkdown);
-console.log(result.links.internal);
-console.log(result.media.images);
+console.log(page.markdown);
+console.log(page.links);
+```
 
-await crawler.close();
+`WebCrawler` implements async disposal. If your runtime does not support `await using`, call
+`await crawler.close()` in a `finally` block.
+
+## Scraping, Mapping, and Page Actions
+
+The high-level `scrape()` API returns only the requested formats and defaults to primary-content
+extraction with inline base64 images removed:
+
+```typescript
+const document = await crawler.scrape("https://example.com/products", {
+  formats: ["markdown", "html", "links", "screenshot"],
+  cacheMaxAgeMs: 15 * 60_000,
+  headers: { "Accept-Language": "en-US" },
+  actions: [
+    { type: "click", selector: "#load-more" },
+    { type: "wait", selector: ".product-card" },
+    { type: "scrape" },
+  ],
+});
+```
+
+Discover URLs before deciding what to crawl:
+
+```typescript
+const site = await crawler.map("https://example.com", {
+  limit: 5_000,
+  sitemap: "include", // "skip" or "only" are also available
+  ignoreQueryParameters: true,
+});
+```
+
+Every crawl can be cancelled and has configurable fetch retry/size behavior:
+
+```typescript
+const controller = new AbortController();
+const result = await crawler.crawl(url, {
+  signal: controller.signal,
+  maxResponseBytes: 5 * 1024 * 1024,
+  retry: { maxAttempts: 4, baseDelayMs: 750 },
+});
 ```
 
 ## Deep Crawling

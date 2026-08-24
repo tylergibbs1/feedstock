@@ -1,17 +1,23 @@
+import * as cheerio from "cheerio";
 import TurndownService from "turndown";
+import type { ContentFilterConfig } from "../config";
 import type { MarkdownGenerationResult } from "../models";
+import { BM25ContentFilter, PruningContentFilter } from "./content-filter";
 
-/**
- * Abstract base for markdown generation strategies.
- */
-export abstract class MarkdownGenerationStrategy {
-	abstract generate(url: string, html: string): MarkdownGenerationResult;
+export interface MarkdownGenerationOptions {
+	contentFilter?: ContentFilterConfig | null;
 }
 
-/**
- * Default markdown generator using Turndown.
- * Converts cleaned HTML to markdown with optional citations.
- */
+/** Abstract base for markdown generation strategies. */
+export abstract class MarkdownGenerationStrategy {
+	abstract generate(
+		url: string,
+		html: string,
+		options?: MarkdownGenerationOptions,
+	): MarkdownGenerationResult;
+}
+
+/** Default LLM-oriented Markdown generator with citations and content filtering. */
 export class DefaultMarkdownGenerator extends MarkdownGenerationStrategy {
 	private turndown: TurndownService;
 
@@ -25,63 +31,90 @@ export class DefaultMarkdownGenerator extends MarkdownGenerationStrategy {
 			bulletListMarker: "-",
 		});
 
-		// Keep tables
 		this.turndown.addRule("table", {
 			filter: "table",
-			replacement: (_content, node) => {
-				return `\n\n${this.convertTable(node as HTMLTableElement)}\n\n`;
-			},
+			replacement: (_content, node) => `\n\n${this.convertTable(node as Element)}\n\n`,
 		});
 	}
 
-	generate(_url: string, html: string): MarkdownGenerationResult {
-		const rawMarkdown = this.turndown.turndown(html);
+	generate(
+		url: string,
+		html: string,
+		options: MarkdownGenerationOptions = {},
+	): MarkdownGenerationResult {
+		const rawMarkdown = this.turndown.turndown(this.absolutizeUrls(html, url));
 
-		// Build citation version: collect all links and add references
+		// Reference-style citations save tokens by deduplicating repeated URLs.
 		const links: Array<{ text: string; href: string }> = [];
-		let citationMarkdown = rawMarkdown;
-		const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-		let match: RegExpExecArray | null;
-		let index = 0;
+		const indexes = new Map<string, number>();
+		const citationMarkdown = rawMarkdown.replace(
+			/(?<!!)\[([^\]]+)]\((\S+?)(?:\s+["'][^"']*["'])?\)/g,
+			(_full, text: string, href: string) => {
+				let index = indexes.get(href);
+				if (!index) {
+					index = links.length + 1;
+					indexes.set(href, index);
+					links.push({ text, href });
+				}
+				return `${text} [${index}]`;
+			},
+		);
 
-		const replacements: Array<{ from: string; to: string }> = [];
+		const referencesMarkdown = links.map((link, index) => `[${index + 1}] ${link.href}`).join("\n");
+		const markdownWithCitations = links.length
+			? `${citationMarkdown}\n\n## References\n\n${referencesMarkdown}`
+			: rawMarkdown;
 
-		while ((match = linkRegex.exec(rawMarkdown)) !== null) {
-			const [full, text, href] = match;
-			index++;
-			links.push({ text, href });
-			replacements.push({ from: full, to: `${text} [${index}]` });
+		let fitMarkdown: string | null = null;
+		if (options.contentFilter?.type === "pruning") {
+			fitMarkdown = new PruningContentFilter({
+				minWords: options.contentFilter.minWords,
+			}).filter(rawMarkdown);
+		} else if (options.contentFilter?.type === "bm25") {
+			fitMarkdown = new BM25ContentFilter({
+				threshold: options.contentFilter.threshold,
+			}).filter(rawMarkdown, options.contentFilter.query);
 		}
-
-		for (const { from, to } of replacements) {
-			citationMarkdown = citationMarkdown.replace(from, to);
-		}
-
-		// Build references section
-		const referencesMarkdown =
-			links.length > 0 ? links.map((link, i) => `[${i + 1}] ${link.href}`).join("\n") : "";
-
-		const markdownWithCitations =
-			links.length > 0
-				? `${citationMarkdown}\n\n## References\n\n${referencesMarkdown}`
-				: rawMarkdown;
 
 		return {
 			rawMarkdown,
 			markdownWithCitations,
 			referencesMarkdown,
-			fitMarkdown: null,
+			fitMarkdown,
 		};
 	}
 
-	private convertTable(node: HTMLTableElement | Element): string {
-		// Simple table-to-markdown conversion
-		// Turndown doesn't handle tables natively, so we do it manually
-		const _rows: string[][] = [];
-		const _tableNode = node as unknown as { querySelectorAll: (s: string) => NodeListOf<Element> };
+	private convertTable(node: Element): string {
+		const rows = Array.from(node.querySelectorAll("tr"))
+			.map((row) =>
+				Array.from(row.querySelectorAll("th, td")).map((cell) =>
+					(cell.textContent ?? "").replace(/\s+/g, " ").trim().replace(/\|/g, "\\|"),
+				),
+			)
+			.filter((row) => row.length > 0);
+		if (rows.length === 0) return "";
 
-		// This runs in Node context with cheerio's serialized HTML,
-		// so we'll do a simpler text-based approach
-		return `[Table]`;
+		const width = Math.max(...rows.map((row) => row.length));
+		const normalized = rows.map((row) => [...row, ...Array(width - row.length).fill("")]);
+		const header = normalized[0];
+		return [
+			`| ${header.join(" | ")} |`,
+			`| ${header.map(() => "---").join(" | ")} |`,
+			...normalized.slice(1).map((row) => `| ${row.join(" | ")} |`),
+		].join("\n");
+	}
+
+	private absolutizeUrls(html: string, baseUrl: string): string {
+		const $ = cheerio.load(html, null, false);
+		$("a[href], img[src], source[src]").each((_, element) => {
+			const node = $(element);
+			const attribute = node.attr("href") !== undefined ? "href" : "src";
+			const value = node.attr(attribute);
+			if (!value || value.startsWith("data:") || value.startsWith("#")) return;
+			try {
+				node.attr(attribute, new URL(value, baseUrl).href);
+			} catch {}
+		});
+		return $.html();
 	}
 }

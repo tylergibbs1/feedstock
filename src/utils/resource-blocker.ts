@@ -9,7 +9,7 @@
  * Also supports custom configs with glob patterns and resource types.
  */
 
-import type { BrowserContext } from "playwright";
+import type { BrowserContext, Route } from "playwright";
 import type { BlockResourcesConfig } from "../config";
 
 interface ResolvedBlockConfig {
@@ -64,24 +64,35 @@ function resolveConfig(config: BlockResourcesConfig): ResolvedBlockConfig | null
 export async function applyResourceBlocking(
 	ctx: BrowserContext,
 	config: BlockResourcesConfig,
-): Promise<void> {
+): Promise<() => Promise<void>> {
 	const resolved = resolveConfig(config);
-	if (!resolved) return;
+	if (!resolved) return async () => {};
+	const registrations: Array<{ pattern: string; handler: (route: Route) => Promise<void> }> = [];
 
 	// Block by glob patterns
 	for (const pattern of resolved.patterns) {
-		await ctx.route(pattern, (route) => route.abort());
+		const handler = (route: Route) => route.abort();
+		await ctx.route(pattern, handler);
+		registrations.push({ pattern, handler });
 	}
 
 	// Block by resource type
 	if (resolved.resourceTypes.length > 0) {
 		const blockedTypes = new Set(resolved.resourceTypes);
-		await ctx.route("**/*", (route) => {
+		const handler = (route: Route) => {
 			const type = route.request().resourceType();
 			if (blockedTypes.has(type)) {
 				return route.abort();
 			}
-			return route.continue();
-		});
+			return route.fallback();
+		};
+		await ctx.route("**/*", handler);
+		registrations.push({ pattern: "**/*", handler });
 	}
+
+	return async () => {
+		for (const { pattern, handler } of registrations.reverse()) {
+			await ctx.unroute(pattern, handler).catch(() => {});
+		}
+	};
 }

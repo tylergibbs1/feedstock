@@ -10,13 +10,14 @@
 
 import type { CrawlerRunConfig } from "../config";
 import type { CrawlResponse } from "../models";
+import type { HookFn, HookType } from "../strategies/crawler-strategy";
 import { isBlocked } from "../utils/antibot";
 import type { Logger } from "../utils/logger";
 import { SilentLogger } from "../utils/logger";
 import { type Engine, type EngineResult, likelyNeedsJavaScript } from "./base";
 
 export interface EngineManagerConfig {
-	/** If true, always try fetch first even if config requires JS features */
+	/** Prefer the fetch engine when it can satisfy every requested feature. */
 	fetchFirst: boolean;
 	/** If true, auto-escalate to browser when fetch returns SPA shell */
 	autoEscalate: boolean;
@@ -59,6 +60,14 @@ export class EngineManager {
 	async close(): Promise<void> {
 		for (const engine of this.engines) {
 			await engine.close();
+		}
+	}
+
+	setHook(type: HookType, fn: HookFn): void {
+		for (const engine of this.engines) {
+			if ("setHook" in engine && typeof engine.setHook === "function") {
+				(engine as Engine & { setHook(type: HookType, fn: HookFn): void }).setHook(type, fn);
+			}
 		}
 	}
 
@@ -151,22 +160,8 @@ export class EngineManager {
 	}
 
 	private selectEngines(config: CrawlerRunConfig): Engine[] {
-		const needsBrowser =
-			!!config.jsCode ||
-			!!config.screenshot ||
-			!!config.pdf ||
-			!!config.captureNetworkRequests ||
-			!!config.captureConsoleMessages ||
-			(config.waitFor && config.waitFor.kind !== "delay");
-
-		if (needsBrowser && !this.config.fetchFirst) {
-			return this.engines.filter((e) => e.canHandle(config));
-		}
-
-		if (this.config.fetchFirst && !needsBrowser) {
-			return this.engines;
-		}
-
+		// Never run an engine that cannot produce the requested contract. The
+		// constructor's quality ordering naturally keeps fetch first when capable.
 		return this.engines.filter((e) => e.canHandle(config));
 	}
 

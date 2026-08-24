@@ -38,6 +38,35 @@ describe("DefaultMarkdownGenerator", () => {
 		expect(result.fitMarkdown).toBeNull();
 	});
 
+	test("turns relative URLs into absolute URLs and deduplicates citations", () => {
+		const result = generator.generate(
+			"https://example.com/docs/page",
+			'<a href="../guide">Guide one</a><a href="../guide">Guide two</a><img src="/logo.png">',
+		);
+		expect(result.referencesMarkdown).toBe("[1] https://example.com/guide");
+		expect(result.rawMarkdown).toContain("https://example.com/logo.png");
+	});
+
+	test("converts tables into useful markdown", () => {
+		const result = generator.generate(
+			"https://example.com",
+			"<table><tr><th>Name</th><th>Price</th></tr><tr><td>Widget</td><td>$5</td></tr></table>",
+		);
+		expect(result.rawMarkdown).toContain("| Name | Price |");
+		expect(result.rawMarkdown).toContain("| Widget | $5 |");
+		expect(result.rawMarkdown).not.toContain("[Table]");
+	});
+
+	test("generates fit markdown with a pruning filter", () => {
+		const result = generator.generate(
+			"https://example.com",
+			"<p>This paragraph contains enough useful words to survive content pruning intact.</p><p>Tiny</p>",
+			{ contentFilter: { type: "pruning", minWords: 5 } },
+		);
+		expect(result.fitMarkdown).toContain("enough useful words");
+		expect(result.fitMarkdown).not.toContain("Tiny");
+	});
+
 	test("preserves code blocks", () => {
 		const html = "<pre><code>const x = 1;</code></pre>";
 		const result = generator.generate("https://example.com", html);

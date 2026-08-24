@@ -22,6 +22,8 @@ export interface LinkItem {
 	text: string;
 	title: string;
 	baseDomain: string;
+	rel?: string[];
+	nofollow?: boolean;
 }
 
 export interface Media {
@@ -71,6 +73,30 @@ export interface CrawlResponse {
 	redirectedUrl: string | null;
 	networkRequests: NetworkRequest[] | null;
 	consoleMessages: ConsoleMessage[] | null;
+	actions?: BrowserActionResults | null;
+	interactiveElements?: InteractiveElement[] | null;
+}
+
+export interface BrowserActionScreenshot {
+	actionIndex: number;
+	base64: string;
+}
+
+export interface BrowserActionScrape {
+	actionIndex: number;
+	url: string;
+	html: string;
+}
+
+export interface BrowserActionJavascriptReturn {
+	actionIndex: number;
+	value: unknown;
+}
+
+export interface BrowserActionResults {
+	screenshots: BrowserActionScreenshot[];
+	scrapes: BrowserActionScrape[];
+	javascriptReturns: BrowserActionJavascriptReturn[];
 }
 
 export interface NetworkRequest {
@@ -116,6 +142,44 @@ export interface CrawlResult {
 	// Cache metadata
 	cacheStatus: "hit" | "miss" | "bypass" | null;
 	cachedAt: number | null;
+	/** Engine used for the successful fetch (for observability). */
+	engine?: string | null;
+	/** Fetch and end-to-end durations in milliseconds. */
+	timings?: { fetchMs: number; totalMs: number } | null;
+	/** Results produced by declarative browser actions. */
+	actions?: BrowserActionResults | null;
+}
+
+export type ScrapeFormat =
+	| "markdown"
+	| "html"
+	| "rawHtml"
+	| "links"
+	| "images"
+	| "screenshot"
+	| "pdf"
+	| "snapshot"
+	| "json";
+
+/** Compact, format-driven result returned by WebCrawler.scrape(). */
+export interface ScrapeDocument {
+	url: string;
+	success: boolean;
+	statusCode: number | null;
+	error: string | null;
+	metadata: Record<string, unknown> | null;
+	markdown?: string;
+	html?: string;
+	rawHtml?: string;
+	links?: string[];
+	images?: string[];
+	screenshot?: string | null;
+	pdf?: Buffer | null;
+	snapshot?: string | null;
+	json?: unknown;
+	actions?: BrowserActionResults | null;
+	cacheStatus: "hit" | "miss" | "bypass" | null;
+	warnings?: string[];
 }
 
 export interface InteractiveElement {

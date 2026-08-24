@@ -15,7 +15,7 @@ export interface CLIError {
 export function exitError(code: string, message: string, suggestion?: string, exitCode = 1): never {
 	const err: CLIError = { error: true, code, message };
 	if (suggestion) err.suggestion = suggestion;
-	process.stderr.write(JSON.stringify(err) + "\n");
+	process.stderr.write(`${JSON.stringify(err)}\n`);
 	process.exit(exitCode);
 }
 

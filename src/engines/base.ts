@@ -51,6 +51,11 @@ export abstract class Engine {
 		if (config.waitFor && !this.capabilities.waitConditions) return false;
 		if (config.captureNetworkRequests && !this.capabilities.networkRequests) return false;
 		if (config.captureConsoleMessages && !this.capabilities.consoleMessages) return false;
+		if (config.actions.length > 0 && !this.capabilities.javascript) return false;
+		if (config.inlineIframes && !this.capabilities.javascript) return false;
+		if (config.simulateUser && !this.capabilities.javascript) return false;
+		if (config.removeConsentPopups && !this.capabilities.javascript) return false;
+		if (config.waitAfterLoad > 0 && !this.capabilities.waitConditions) return false;
 		return true;
 	}
 }

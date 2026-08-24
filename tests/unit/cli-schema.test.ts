@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderHelp, SCHEMAS } from "../../src/cli/schema";
 
 describe("SCHEMAS", () => {
-	test("has all 7 commands", () => {
+	test("has all 9 commands", () => {
 		const names = Object.keys(SCHEMAS);
 		expect(names).toContain("crawl");
 		expect(names).toContain("crawl-many");
@@ -11,7 +11,9 @@ describe("SCHEMAS", () => {
 		expect(names).toContain("schema");
 		expect(names).toContain("cache");
 		expect(names).toContain("monitor");
-		expect(names).toHaveLength(7);
+		expect(names).toContain("scrape");
+		expect(names).toContain("map");
+		expect(names).toHaveLength(9);
 	});
 
 	test("crawl has url arg", () => {
@@ -55,6 +57,13 @@ describe("SCHEMAS", () => {
 		const flags = SCHEMAS.monitor.flags;
 		expect(flags).toHaveProperty("port");
 		expect(flags).toHaveProperty("hostname");
+	});
+
+	test("scrape and map expose their concise discovery contracts", () => {
+		expect(SCHEMAS.scrape.flags).toHaveProperty("formats");
+		expect(SCHEMAS.scrape.flags).toHaveProperty("only-main-content");
+		expect(SCHEMAS.map.flags).toHaveProperty("sitemap");
+		expect(SCHEMAS.map.flags).toHaveProperty("ignore-query-parameters");
 	});
 
 	test("every flag has a description", () => {

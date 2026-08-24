@@ -7,14 +7,18 @@ export { type CacheValidationResult, CacheValidator } from "./cache/validator";
 // Config
 export {
 	type BlockResourcesConfig,
+	type BrowserAction,
 	type BrowserBackend,
 	type BrowserConfig,
 	type BrowserType,
+	type ContentFilterConfig,
 	type CrawlerRunConfig,
+	type CrawlerRunConfigOverrides,
 	createBrowserConfig,
 	createCrawlerRunConfig,
 	type ExtractionStrategyConfig,
 	type ProxyConfig,
+	type RequestRetryConfig,
 	type ResourceBlockProfile,
 	type WaitForType,
 } from "./config";
@@ -26,7 +30,14 @@ export {
 	loadEnvConfig,
 	loadProjectConfig,
 } from "./config-loader";
-export { WebCrawler, type WebCrawlerOptions } from "./crawler";
+export {
+	type MapLink,
+	type MapOptions,
+	type MapResult,
+	type ScrapeOptions,
+	WebCrawler,
+	type WebCrawlerOptions,
+} from "./crawler";
 // Deep Crawl
 export {
 	BestFirstDeepCrawlStrategy,
@@ -64,6 +75,10 @@ export {
 } from "./engines";
 // Models
 export {
+	type BrowserActionJavascriptReturn,
+	type BrowserActionResults,
+	type BrowserActionScrape,
+	type BrowserActionScreenshot,
 	type ConsoleMessage,
 	type CrawlResponse,
 	type CrawlResult,
@@ -77,6 +92,8 @@ export {
 	type Media,
 	type MediaItem,
 	type NetworkRequest,
+	type ScrapeDocument,
+	type ScrapeFormat,
 	type ScrapingResult,
 } from "./models";
 // Snapshot
@@ -132,6 +149,7 @@ export {
 } from "./strategies/extraction/xpath";
 export {
 	DefaultMarkdownGenerator,
+	type MarkdownGenerationOptions,
 	MarkdownGenerationStrategy,
 } from "./strategies/markdown";
 export {
@@ -188,5 +206,11 @@ export {
 	type StorageState,
 	saveStorageState,
 } from "./utils/storage";
+export {
+	isSameDomain,
+	type NormalizeUrlOptions,
+	normalizeUrl,
+	stableStringify,
+} from "./utils/url";
 export { type SeedResult, URLSeeder } from "./utils/url-seeder";
 export { getRandomUserAgent, UserAgentRotator } from "./utils/user-agents";

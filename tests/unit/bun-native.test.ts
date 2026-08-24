@@ -10,6 +10,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CrawlCache, contentHash } from "../../src/cache/database";
+import { extractAllStreaming } from "../../src/utils/html-rewriter";
 import { getStorageStatePath, loadStorageState } from "../../src/utils/storage";
 
 // ---------------------------------------------------------------------------
@@ -45,7 +46,7 @@ describe("Cache gzip compression", () => {
 
 	test("large content compresses and decompresses correctly", () => {
 		// Simulate a real page — lots of repeated HTML patterns compress well
-		const bigHtml = "<div>".repeat(10000) + "<p>Content</p>" + "</div>".repeat(10000);
+		const bigHtml = `${"<div>".repeat(10000)}<p>Content</p>${"</div>".repeat(10000)}`;
 		const original = JSON.stringify({ html: bigHtml });
 		cache.set("https://big.com", original);
 
@@ -107,6 +108,19 @@ describe("Bun.hash contentHash", () => {
 		const hash = contentHash(large);
 		expect(hash.length).toBeGreaterThan(0);
 		expect(contentHash(large)).toBe(hash);
+	});
+});
+
+describe("Bun HTMLRewriter extraction", () => {
+	test("waits for the anchor end tag so nested text is not truncated", () => {
+		const result = extractAllStreaming(
+			'<base href="https://example.com/docs/"><a href="guide" rel="nofollow">Read <strong>the complete guide</strong></a><a href="guide">Duplicate</a>',
+			"https://example.com/start",
+		);
+		expect(result.links.internal).toHaveLength(1);
+		expect(result.links.internal[0].href).toBe("https://example.com/docs/guide");
+		expect(result.links.internal[0].text).toBe("Read the complete guide");
+		expect(result.links.internal[0].nofollow).toBe(true);
 	});
 });
 

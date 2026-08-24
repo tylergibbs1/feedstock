@@ -1,8 +1,19 @@
-import type { Page } from "playwright";
+import type {
+	Page,
+	ConsoleMessage as PlaywrightConsoleMessage,
+	Response as PlaywrightResponse,
+} from "playwright";
 import { BrowserManager } from "../browser/manager";
-import type { BrowserConfig, CrawlerRunConfig, WaitForType } from "../config";
-import type { ConsoleMessage, CrawlResponse, NetworkRequest } from "../models";
+import type { BrowserAction, BrowserConfig, CrawlerRunConfig, WaitForType } from "../config";
+import type {
+	BrowserActionResults,
+	ConsoleMessage,
+	CrawlResponse,
+	NetworkRequest,
+} from "../models";
 import { simulateUser } from "../utils/antibot";
+import { extractIframeContent, inlineIframeContent } from "../utils/iframe";
+import { detectInteractiveElements } from "../utils/interactive";
 import type { Logger } from "../utils/logger";
 import { SilentLogger } from "../utils/logger";
 
@@ -64,13 +75,11 @@ export class PlaywrightCrawlerStrategy extends CrawlerStrategy {
 
 	async crawl(url: string, config: CrawlerRunConfig): Promise<CrawlResponse> {
 		const { page, sessionId } = await this.browserManager.getPage(config.sessionId);
-
-		// Set up network request capture
+		const isAdHocSession = !config.sessionId;
 		const networkRequests: NetworkRequest[] = [];
 		const consoleMessages: ConsoleMessage[] = [];
-
-		if (config.captureNetworkRequests) {
-			page.on("response", (response) => {
+		const onResponse = (response: PlaywrightResponse) => {
+			if (config.captureNetworkRequests) {
 				const request = response.request();
 				networkRequests.push({
 					url: request.url(),
@@ -79,110 +88,102 @@ export class PlaywrightCrawlerStrategy extends CrawlerStrategy {
 					resourceType: request.resourceType(),
 					responseHeaders: response.headers(),
 				});
-			});
-		}
-
-		if (config.captureConsoleMessages) {
-			page.on("console", (msg) => {
+			}
+		};
+		const onConsole = (msg: PlaywrightConsoleMessage) => {
+			if (config.captureConsoleMessages) {
 				consoleMessages.push({
 					type: msg.type(),
 					text: msg.text(),
 					timestamp: Date.now(),
 				});
-			});
-		}
-
-		// Block unnecessary resources at context level for faster page loads
-		if (config.blockResources) {
-			const { applyResourceBlocking } = await import("../utils/resource-blocker");
-			await applyResourceBlocking(page.context(), config.blockResources);
-		}
-
-		await this.executeHook("onPageCreated", page);
-
-		// Navigate
-		await this.executeHook("beforeGoto", page, url);
-
-		this.logger.info(`Navigating to ${url}`);
-		const response = await page.goto(url, {
-			waitUntil: config.navigationWaitUntil,
-			timeout: config.pageTimeout,
-		});
-
-		await this.executeHook("afterGoto", page);
-
-		// Simulate human behavior if enabled
-		if (config.simulateUser) {
-			await simulateUser(page);
-		}
-
-		// Wait conditions
-		if (config.waitAfterLoad > 0) {
-			await page.waitForTimeout(config.waitAfterLoad);
-		}
-
-		if (config.waitFor) {
-			await this.applyWaitFor(page, config.waitFor);
-		}
-
-		// Execute custom JS
-		if (config.jsCode) {
-			await this.executeHook("onExecutionStarted", page);
-			const scripts = Array.isArray(config.jsCode) ? config.jsCode : [config.jsCode];
-			for (const script of scripts) {
-				await page.evaluate(script);
 			}
-			// Wait a bit after JS execution for DOM to settle
-			await page.waitForTimeout(100);
-		}
-
-		// Remove overlay elements if requested
-		if (config.removeOverlayElements || config.removeConsentPopups) {
-			await this.removeOverlays(page);
-		}
-
-		await this.executeHook("beforeReturnHtml", page);
-
-		// Capture content
-		const html = await page.content();
-		const statusCode = response?.status() ?? 0;
-		const responseHeaders: Record<string, string> = {};
-		if (response) {
-			const headers = response.headers();
-			for (const [key, value] of Object.entries(headers)) {
-				responseHeaders[key] = value;
-			}
-		}
-
-		// Optional captures
-		let screenshot: string | null = null;
-		if (config.screenshot) {
-			const buffer = await page.screenshot({ fullPage: true });
-			screenshot = buffer.toString("base64");
-		}
-
-		let pdfData: Buffer | null = null;
-		if (config.pdf) {
-			pdfData = Buffer.from(await page.pdf());
-		}
-
-		const redirectedUrl = page.url() !== url ? page.url() : null;
-
-		// Clean up session if it was ad-hoc (no sessionId provided)
-		if (!config.sessionId) {
-			await this.browserManager.killSession(sessionId);
-		}
-
-		return {
-			html,
-			responseHeaders,
-			statusCode,
-			screenshot,
-			pdfData,
-			redirectedUrl,
-			networkRequests: config.captureNetworkRequests ? networkRequests : null,
-			consoleMessages: config.captureConsoleMessages ? consoleMessages : null,
 		};
+		page.on("response", onResponse);
+		page.on("console", onConsole);
+
+		let removeResourceBlocking = async () => {};
+		try {
+			config.signal?.throwIfAborted();
+			if (Object.keys(config.headers).length > 0) await page.setExtraHTTPHeaders(config.headers);
+			if (config.blockResources) {
+				const { applyResourceBlocking } = await import("../utils/resource-blocker");
+				removeResourceBlocking = await applyResourceBlocking(page.context(), config.blockResources);
+			}
+
+			await this.executeHook("onPageCreated", page);
+			await this.executeHook("beforeGoto", page, url);
+			this.logger.info(`Navigating to ${url}`);
+			const response = await abortable(
+				page.goto(url, {
+					waitUntil: config.navigationWaitUntil,
+					timeout: config.pageTimeout,
+				}),
+				config.signal,
+			);
+
+			await this.executeHook("afterGoto", page);
+			if (config.simulateUser) await abortable(simulateUser(page), config.signal);
+			if (config.waitAfterLoad > 0) {
+				await abortable(page.waitForTimeout(config.waitAfterLoad), config.signal);
+			}
+			if (config.waitFor) await abortable(this.applyWaitFor(page, config.waitFor), config.signal);
+
+			if (config.jsCode) {
+				await this.executeHook("onExecutionStarted", page);
+				const scripts = Array.isArray(config.jsCode) ? config.jsCode : [config.jsCode];
+				for (const script of scripts) {
+					await abortable(page.evaluate(script), config.signal);
+				}
+				await abortable(page.waitForTimeout(100), config.signal);
+			}
+
+			if (config.removeOverlayElements || config.removeConsentPopups) {
+				await abortable(this.removeOverlays(page), config.signal);
+			}
+			const actionResults = await this.runActions(page, config.actions, config.signal);
+			await this.executeHook("beforeReturnHtml", page);
+
+			let html = await abortable(page.content(), config.signal);
+			if (config.inlineIframes) {
+				html = inlineIframeContent(
+					html,
+					await abortable(extractIframeContent(page), config.signal),
+				);
+			}
+
+			const responseHeaders = response?.headers() ?? {};
+			const screenshot = config.screenshot
+				? (await abortable(page.screenshot({ fullPage: true }), config.signal)).toString("base64")
+				: null;
+			const pdfData = config.pdf ? Buffer.from(await abortable(page.pdf(), config.signal)) : null;
+			const interactiveElements = config.detectInteractiveElements
+				? await abortable(detectInteractiveElements(page), config.signal)
+				: null;
+
+			return {
+				html,
+				responseHeaders,
+				statusCode: response?.status() ?? 0,
+				screenshot,
+				pdfData,
+				redirectedUrl: page.url() !== url ? page.url() : null,
+				networkRequests: config.captureNetworkRequests ? networkRequests : null,
+				consoleMessages: config.captureConsoleMessages ? consoleMessages : null,
+				actions: actionResults,
+				interactiveElements,
+			};
+		} finally {
+			page.off("response", onResponse);
+			page.off("console", onConsole);
+			await removeResourceBlocking().catch(() => {});
+			if (Object.keys(config.headers).length > 0 && !page.isClosed()) {
+				await page.setExtraHTTPHeaders({}).catch(() => {});
+			}
+			if (isAdHocSession || config.signal?.aborted) {
+				await this.browserManager.killSession(sessionId);
+			}
+		}
 	}
 
 	private async applyWaitFor(page: Page, waitFor: WaitForType): Promise<void> {
@@ -193,7 +194,7 @@ export class PlaywrightCrawlerStrategy extends CrawlerStrategy {
 				});
 				break;
 			case "networkIdle":
-				await page.waitForLoadState("networkidle");
+				await page.waitForLoadState("networkidle", { timeout: waitFor.timeout ?? 30_000 });
 				break;
 			case "delay":
 				await page.waitForTimeout(waitFor.ms);
@@ -204,6 +205,97 @@ export class PlaywrightCrawlerStrategy extends CrawlerStrategy {
 				});
 				break;
 		}
+	}
+
+	private async runActions(
+		page: Page,
+		actions: BrowserAction[],
+		signal: AbortSignal | null,
+	): Promise<BrowserActionResults | null> {
+		if (actions.length === 0) return null;
+		const results: BrowserActionResults = {
+			screenshots: [],
+			scrapes: [],
+			javascriptReturns: [],
+		};
+
+		for (const [actionIndex, action] of actions.entries()) {
+			signal?.throwIfAborted();
+			switch (action.type) {
+				case "wait":
+					if (action.selector) {
+						await abortable(
+							page.waitForSelector(action.selector, { timeout: action.timeout ?? 30_000 }),
+							signal,
+						);
+					} else if (action.milliseconds !== undefined) {
+						await abortable(page.waitForTimeout(action.milliseconds), signal);
+					} else {
+						throw new Error('The "wait" action requires selector or milliseconds');
+					}
+					break;
+				case "click":
+					await abortable(page.locator(action.selector).click({ timeout: action.timeout }), signal);
+					break;
+				case "fill":
+					await abortable(
+						page.locator(action.selector).fill(action.value, { timeout: action.timeout }),
+						signal,
+					);
+					break;
+				case "write":
+					await abortable(page.keyboard.insertText(action.text), signal);
+					break;
+				case "press":
+					if (action.selector) {
+						await abortable(page.locator(action.selector).press(action.key), signal);
+					} else {
+						await abortable(page.keyboard.press(action.key), signal);
+					}
+					break;
+				case "scroll": {
+					const amount = (action.amount ?? 600) * (action.direction === "up" ? -1 : 1);
+					if (action.selector) {
+						await abortable(
+							page
+								.locator(action.selector)
+								.evaluate((element, delta) => element.scrollBy(0, delta), amount),
+							signal,
+						);
+					} else {
+						await abortable(page.mouse.wheel(0, amount), signal);
+					}
+					break;
+				}
+				case "screenshot": {
+					const buffer = await abortable(
+						page.screenshot({
+							fullPage: action.fullPage ?? true,
+							...(action.quality !== undefined
+								? { type: "jpeg" as const, quality: action.quality }
+								: {}),
+						}),
+						signal,
+					);
+					results.screenshots.push({ actionIndex, base64: buffer.toString("base64") });
+					break;
+				}
+				case "scrape":
+					results.scrapes.push({
+						actionIndex,
+						url: page.url(),
+						html: await abortable(page.content(), signal),
+					});
+					break;
+				case "executeJavascript":
+					results.javascriptReturns.push({
+						actionIndex,
+						value: await abortable(page.evaluate(action.script), signal),
+					});
+					break;
+			}
+		}
+		return results;
 	}
 
 	private async removeOverlays(page: Page): Promise<void> {
@@ -231,4 +323,14 @@ export class PlaywrightCrawlerStrategy extends CrawlerStrategy {
 			document.body.style.overflow = "auto";
 		});
 	}
+}
+
+async function abortable<T>(promise: Promise<T>, signal: AbortSignal | null): Promise<T> {
+	if (!signal) return promise;
+	signal.throwIfAborted();
+	return new Promise<T>((resolve, reject) => {
+		const aborted = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+		signal.addEventListener("abort", aborted, { once: true });
+		promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted));
+	});
 }

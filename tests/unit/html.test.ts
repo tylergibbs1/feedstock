@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { cleanHtml, extractLinks, extractMedia, extractMetadata } from "../../src/utils/html";
+import {
+	cleanHtml,
+	extractLinks,
+	extractMedia,
+	extractMetadata,
+	scrapeAll,
+} from "../../src/utils/html";
 
 const SAMPLE_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -60,6 +66,22 @@ describe("cleanHtml", () => {
 		expect(cleaned).toContain("Hello World");
 		expect(cleaned).not.toContain("Some content");
 	});
+
+	test("onlyMainContent removes surrounding navigation", () => {
+		const cleaned = cleanHtml(SAMPLE_HTML, { onlyMainContent: true, wordCountThreshold: 0 });
+		expect(cleaned).toContain("Hello World");
+		expect(cleaned).not.toContain("Home");
+		expect(cleaned).not.toContain("Footer");
+	});
+
+	test("onlyMainContent prioritizes semantic main content over an earlier generic class", () => {
+		const cleaned = cleanHtml(
+			'<div class="content">Sidebar content that should not win selection.</div><main>Primary article content is selected even when it appears later.</main>',
+			{ onlyMainContent: true, wordCountThreshold: 0 },
+		);
+		expect(cleaned).toContain("Primary article content");
+		expect(cleaned).not.toContain("Sidebar content");
+	});
 });
 
 describe("extractMetadata", () => {
@@ -72,6 +94,15 @@ describe("extractMetadata", () => {
 		expect(meta.ogImage).toBe("https://example.com/og.png");
 		expect(meta.canonical).toBe("https://example.com/page");
 		expect(meta.language).toBe("en");
+	});
+
+	test("resolves relative metadata URLs against the final page URL", () => {
+		const meta = extractMetadata(
+			'<link rel="canonical" href="../canonical"><meta property="og:image" content="/cover.jpg">',
+			"https://example.com/articles/post/",
+		);
+		expect(meta.canonical).toBe("https://example.com/articles/canonical");
+		expect(meta.ogImage).toBe("https://example.com/cover.jpg");
 	});
 });
 
@@ -101,6 +132,28 @@ describe("extractLinks", () => {
 		expect(extLink).toBeDefined();
 		expect(extLink!.baseDomain).toBe("external.com");
 	});
+
+	test("respects base href, captures nested text and deduplicates links", () => {
+		const links = extractLinks(
+			'<base href="https://example.com/docs/"><a href="guide" rel="nofollow">Read <strong>the guide</strong></a><a href="guide">duplicate</a>',
+			"https://example.com/start",
+		);
+		expect(links.internal).toHaveLength(1);
+		expect(links.internal[0].href).toBe("https://example.com/docs/guide");
+		expect(links.internal[0].text).toBe("Read the guide");
+		expect(links.internal[0].nofollow).toBe(true);
+	});
+
+	test("absolutizes cleaned document URLs using base href", () => {
+		const scraped = scrapeAll(
+			'<base href="https://cdn.example.com/assets/"><main><a href="guide">Guide</a><img src="cover.png"></main>',
+			"https://example.com/start",
+			{ onlyMainContent: true, wordCountThreshold: 0 },
+		);
+		expect(scraped.cleanedHtml).toContain('href="https://cdn.example.com/assets/guide"');
+		expect(scraped.cleanedHtml).toContain('src="https://cdn.example.com/assets/cover.png"');
+		expect(scraped.media.images[0].src).toBe("https://cdn.example.com/assets/cover.png");
+	});
 });
 
 describe("extractMedia", () => {
@@ -127,5 +180,12 @@ describe("extractMedia", () => {
 		const media = extractMedia(SAMPLE_HTML, "https://example.com/");
 		const photo = media.images.find((i) => i.src.includes("photo.jpg"));
 		expect(photo!.src).toBe("https://example.com/img/photo.jpg");
+	});
+
+	test("can remove base64 images from compact scrape output", () => {
+		const scraped = scrapeAll(SAMPLE_HTML, "https://example.com", {
+			removeBase64Images: true,
+		});
+		expect(scraped.media.images.some((image) => image.src.startsWith("data:"))).toBe(false);
 	});
 });

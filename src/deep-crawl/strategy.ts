@@ -5,13 +5,14 @@
  * linked pages, respecting filters, depth limits, and rate limiting.
  */
 
-import type { CrawlerRunConfig } from "../config";
+import type { CrawlerRunConfigOverrides } from "../config";
 import type { WebCrawler } from "../crawler";
 import type { CrawlResult } from "../models";
 import type { Logger } from "../utils/logger";
 import { SilentLogger } from "../utils/logger";
 import type { RateLimiter } from "../utils/rate-limiter";
 import type { RobotsParser } from "../utils/robots";
+import { normalizeUrl } from "../utils/url";
 import type { FilterChain } from "./filters";
 import type { CompositeScorer, ScorerContext } from "./scorers";
 
@@ -33,6 +34,12 @@ export interface DeepCrawlConfig {
 	 * If false, returns all results at the end (batch mode).
 	 */
 	stream: boolean;
+	/** Treat URLs that differ only by query parameters as duplicates. */
+	ignoreQueryParameters?: boolean;
+	/** Remove common analytics parameters before deduplication. */
+	removeTrackingParameters?: boolean;
+	/** Do not enqueue links marked rel=nofollow. */
+	respectNoFollow?: boolean;
 }
 
 const DEFAULT_DEEP_CRAWL_CONFIG: DeepCrawlConfig = {
@@ -40,6 +47,9 @@ const DEFAULT_DEEP_CRAWL_CONFIG: DeepCrawlConfig = {
 	maxPages: 100,
 	concurrency: 5,
 	stream: false,
+	ignoreQueryParameters: false,
+	removeTrackingParameters: true,
+	respectNoFollow: true,
 };
 
 export function createDeepCrawlConfig(overrides: Partial<DeepCrawlConfig> = {}): DeepCrawlConfig {
@@ -63,7 +73,7 @@ export abstract class DeepCrawlStrategy {
 	abstract run(
 		startUrl: string,
 		crawler: WebCrawler,
-		crawlConfig: Partial<CrawlerRunConfig>,
+		crawlConfig: CrawlerRunConfigOverrides,
 		deepConfig: DeepCrawlConfig,
 	): Promise<CrawlResult[]>;
 
@@ -73,7 +83,7 @@ export abstract class DeepCrawlStrategy {
 	abstract stream(
 		startUrl: string,
 		crawler: WebCrawler,
-		crawlConfig: Partial<CrawlerRunConfig>,
+		crawlConfig: CrawlerRunConfigOverrides,
 		deepConfig: DeepCrawlConfig,
 	): AsyncGenerator<CrawlResult, void, unknown>;
 
@@ -92,7 +102,8 @@ export abstract class DeepCrawlStrategy {
 		const allLinks = [...result.links.internal];
 
 		for (const link of allLinks) {
-			const normalized = this.normalizeUrl(link.href);
+			if ((config.respectNoFollow ?? true) && link.nofollow) continue;
+			const normalized = this.normalizeUrl(link.href, config);
 			if (!normalized) continue;
 			if (visited.has(normalized)) continue;
 
@@ -103,6 +114,9 @@ export abstract class DeepCrawlStrategy {
 			if (config.robotsParser) {
 				const directives = await config.robotsParser.fetch(normalized);
 				if (!config.robotsParser.isAllowed(normalized, directives)) continue;
+				if (directives.crawlDelay !== null && config.rateLimiter) {
+					config.rateLimiter.setDelay(normalized, directives.crawlDelay * 1000);
+				}
 			}
 
 			// Check filter chain
@@ -117,36 +131,27 @@ export abstract class DeepCrawlStrategy {
 		return candidates;
 	}
 
-	protected normalizeUrl(url: string): string | null {
-		try {
-			const parsed = new URL(url);
-			// Remove fragment
-			parsed.hash = "";
-			// Remove trailing slash for consistency
-			let normalized = parsed.href;
-			if (normalized.endsWith("/") && parsed.pathname !== "/") {
-				normalized = normalized.slice(0, -1);
-			}
-			return normalized;
-		} catch {
-			return null;
-		}
+	protected normalizeUrl(url: string, config: DeepCrawlConfig): string | null {
+		return normalizeUrl(url, undefined, {
+			ignoreQueryParameters: config.ignoreQueryParameters,
+			removeTrackingParameters: config.removeTrackingParameters,
+		});
 	}
 
 	protected async crawlWithRateLimit(
 		url: string,
 		crawler: WebCrawler,
-		crawlConfig: Partial<CrawlerRunConfig>,
+		crawlConfig: CrawlerRunConfigOverrides,
 		rateLimiter?: RateLimiter,
 	): Promise<CrawlResult> {
 		if (rateLimiter) {
-			await rateLimiter.waitIfNeeded(url);
+			await rateLimiter.waitIfNeeded(url, crawlConfig.signal ?? undefined);
 		}
 
 		const result = await crawler.crawl(url, crawlConfig);
 
 		if (rateLimiter && result.statusCode) {
-			rateLimiter.reportResult(url, result.statusCode);
+			rateLimiter.reportResult(url, result.statusCode, result.responseHeaders?.["retry-after"]);
 		}
 
 		return result;
@@ -165,7 +170,7 @@ export class BFSDeepCrawlStrategy extends DeepCrawlStrategy {
 	async run(
 		startUrl: string,
 		crawler: WebCrawler,
-		crawlConfig: Partial<CrawlerRunConfig>,
+		crawlConfig: CrawlerRunConfigOverrides,
 		deepConfig: DeepCrawlConfig,
 	): Promise<CrawlResult[]> {
 		const results: CrawlResult[] = [];
@@ -178,18 +183,19 @@ export class BFSDeepCrawlStrategy extends DeepCrawlStrategy {
 	async *stream(
 		startUrl: string,
 		crawler: WebCrawler,
-		crawlConfig: Partial<CrawlerRunConfig>,
+		crawlConfig: CrawlerRunConfigOverrides,
 		deepConfig: DeepCrawlConfig,
 	): AsyncGenerator<CrawlResult, void, unknown> {
 		const logger = deepConfig.logger ?? new SilentLogger();
 		const visited = new Set<string>();
 		const depths = new Map<string, number>();
 
-		let currentLevel = [startUrl];
+		let currentLevel = [this.normalizeUrl(startUrl, deepConfig) ?? startUrl];
 		let currentDepth = 0;
 		let pageCount = 0;
 
 		while (currentLevel.length > 0 && pageCount < deepConfig.maxPages) {
+			crawlConfig.signal?.throwIfAborted();
 			logger.info(`BFS depth ${currentDepth}: ${currentLevel.length} URLs`);
 			const nextLevel: Array<{ url: string; anchorText: string }> = [];
 
@@ -247,7 +253,7 @@ export class DFSDeepCrawlStrategy extends DeepCrawlStrategy {
 	async run(
 		startUrl: string,
 		crawler: WebCrawler,
-		crawlConfig: Partial<CrawlerRunConfig>,
+		crawlConfig: CrawlerRunConfigOverrides,
 		deepConfig: DeepCrawlConfig,
 	): Promise<CrawlResult[]> {
 		const results: CrawlResult[] = [];
@@ -260,7 +266,7 @@ export class DFSDeepCrawlStrategy extends DeepCrawlStrategy {
 	async *stream(
 		startUrl: string,
 		crawler: WebCrawler,
-		crawlConfig: Partial<CrawlerRunConfig>,
+		crawlConfig: CrawlerRunConfigOverrides,
 		deepConfig: DeepCrawlConfig,
 	): AsyncGenerator<CrawlResult, void, unknown> {
 		const logger = deepConfig.logger ?? new SilentLogger();
@@ -269,9 +275,12 @@ export class DFSDeepCrawlStrategy extends DeepCrawlStrategy {
 		let pageCount = 0;
 
 		// Stack: [url, depth]
-		const stack: Array<[string, number]> = [[startUrl, 0]];
+		const stack: Array<[string, number]> = [
+			[this.normalizeUrl(startUrl, deepConfig) ?? startUrl, 0],
+		];
 
 		while (stack.length > 0 && pageCount < deepConfig.maxPages) {
+			crawlConfig.signal?.throwIfAborted();
 			const [url, depth] = stack.pop()!;
 
 			if (visited.has(url)) continue;
@@ -324,7 +333,7 @@ export class BestFirstDeepCrawlStrategy extends DeepCrawlStrategy {
 	async run(
 		startUrl: string,
 		crawler: WebCrawler,
-		crawlConfig: Partial<CrawlerRunConfig>,
+		crawlConfig: CrawlerRunConfigOverrides,
 		deepConfig: DeepCrawlConfig,
 	): Promise<CrawlResult[]> {
 		const results: CrawlResult[] = [];
@@ -337,7 +346,7 @@ export class BestFirstDeepCrawlStrategy extends DeepCrawlStrategy {
 	async *stream(
 		startUrl: string,
 		crawler: WebCrawler,
-		crawlConfig: Partial<CrawlerRunConfig>,
+		crawlConfig: CrawlerRunConfigOverrides,
 		deepConfig: DeepCrawlConfig,
 	): AsyncGenerator<CrawlResult, void, unknown> {
 		const logger = deepConfig.logger ?? new SilentLogger();
@@ -348,10 +357,17 @@ export class BestFirstDeepCrawlStrategy extends DeepCrawlStrategy {
 
 		// Priority queue (sorted by score descending)
 		const queue: ScoredURL[] = [
-			{ url: startUrl, depth: 0, score: 1.0, anchorText: "", parentUrl: "" },
+			{
+				url: this.normalizeUrl(startUrl, deepConfig) ?? startUrl,
+				depth: 0,
+				score: 1.0,
+				anchorText: "",
+				parentUrl: "",
+			},
 		];
 
 		while (queue.length > 0 && pageCount < deepConfig.maxPages) {
+			crawlConfig.signal?.throwIfAborted();
 			// Sort by score (highest first) — simple approach, fine for typical crawl sizes
 			queue.sort((a, b) => b.score - a.score);
 

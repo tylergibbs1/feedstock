@@ -112,4 +112,31 @@ describe("RateLimiter", () => {
 		expect(limiter.reportResult("https://example.com/", 503)).toBe(true);
 		expect(limiter.reportResult("https://example.com/", 200)).toBe(false);
 	});
+
+	test("reserves separate time slots for concurrent callers", async () => {
+		const limiter = new RateLimiter({ baseDelay: 35, jitter: 0 });
+		await limiter.waitIfNeeded("https://example.com/first");
+		const started = Date.now();
+		const waits = await Promise.all([
+			limiter.waitIfNeeded("https://example.com/second"),
+			limiter.waitIfNeeded("https://example.com/third"),
+		]);
+		expect(waits[0]).toBeGreaterThanOrEqual(20);
+		expect(waits[1]).toBeGreaterThan(waits[0]);
+		expect(Date.now() - started).toBeGreaterThanOrEqual(50);
+	});
+
+	test("honors Retry-After when it exceeds exponential backoff", () => {
+		const limiter = new RateLimiter({ baseDelay: 100, maxDelay: 10_000, jitter: 0 });
+		limiter.reportResult("https://example.com", 429, "3");
+		expect(limiter.getDelay("https://example.com")).toBe(3000);
+	});
+
+	test("applies Retry-After to the very next request slot", async () => {
+		const limiter = new RateLimiter({ baseDelay: 5, maxDelay: 100, jitter: 0 });
+		await limiter.waitIfNeeded("https://example.com/first");
+		limiter.reportResult("https://example.com/first", 429, 45);
+		const waited = await limiter.waitIfNeeded("https://example.com/second");
+		expect(waited).toBeGreaterThanOrEqual(30);
+	});
 });

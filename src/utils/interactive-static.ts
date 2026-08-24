@@ -30,7 +30,7 @@ export function detectInteractiveElementsStatic(html: string): InteractiveElemen
 
 	for (const sel of selectors) {
 		$(sel).each((_, el) => {
-			const tag = (el as any).tagName?.toLowerCase() ?? "";
+			const tag = "tagName" in el ? el.tagName.toLowerCase() : "";
 			const text = $(el).text().trim().slice(0, 100);
 			const href = $(el).attr("href") ?? null;
 			const role = $(el).attr("role") ?? null;

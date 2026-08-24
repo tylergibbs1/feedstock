@@ -1,14 +1,10 @@
 import type { CheerioAPI } from "cheerio";
 import * as cheerio from "cheerio";
-import { extractAllStreaming } from "./html-rewriter";
+import type { LinkItem } from "../models";
 
 const NOISE_TAGS = new Set(["script", "style", "noscript", "svg", "path", "iframe", "head"]);
 
-/**
- * Scrape all data from HTML using Bun's native HTMLRewriter for
- * links/media/metadata (streaming, no DOM) and Cheerio only for
- * HTML cleaning (which needs DOM manipulation).
- */
+/** Parse once, then reuse the same Cheerio document for extraction and cleanup. */
 export function scrapeAll(
 	html: string,
 	baseUrl: string,
@@ -17,12 +13,17 @@ export function scrapeAll(
 		includeTags?: string[];
 		cssSelector?: string | null;
 		removeOverlayElements?: boolean;
+		onlyMainContent?: boolean;
+		wordCountThreshold?: number;
+		removeBase64Images?: boolean;
 	} = {},
 ) {
-	// Streaming extraction via HTMLRewriter — no DOM allocation
-	const { links, media, metadata } = extractAllStreaming(html, baseUrl);
-	// Cheerio only for cleaning (needs DOM mutation for tag removal + CSS selectors)
-	const cleanedHtml = cleanHtml(html, opts);
+	const $ = cheerio.load(html);
+	const links = extractLinksWith($, baseUrl);
+	const media = extractMediaWith($, baseUrl, opts.removeBase64Images);
+	const metadata = extractMetadataWith($, baseUrl);
+	absolutizeDocumentUrls($, resolveDocumentBase($, baseUrl));
+	const cleanedHtml = cleanHtmlWith($, opts);
 	return { cleanedHtml, links, media, metadata };
 }
 
@@ -69,6 +70,9 @@ export function cleanHtml(
 		includeTags?: string[];
 		cssSelector?: string | null;
 		removeOverlayElements?: boolean;
+		onlyMainContent?: boolean;
+		wordCountThreshold?: number;
+		removeBase64Images?: boolean;
 	} = {},
 ): string {
 	return cleanHtmlWith(cheerio.load(html), opts);
@@ -81,12 +85,32 @@ function cleanHtmlWith(
 		includeTags?: string[];
 		cssSelector?: string | null;
 		removeOverlayElements?: boolean;
+		onlyMainContent?: boolean;
+		wordCountThreshold?: number;
+		removeBase64Images?: boolean;
 	} = {},
 ): string {
 	// Remove noise tags
 	const tagsToRemove = new Set([...NOISE_TAGS, ...(opts.excludeTags ?? [])]);
 	for (const tag of tagsToRemove) {
 		$(tag).remove();
+	}
+
+	if (opts.removeOverlayElements) {
+		$(
+			'[aria-modal="true"], [class*="cookie" i], [class*="consent" i], [class*="popup" i]',
+		).remove();
+	}
+	if (opts.removeBase64Images) $("img[src^='data:' i]").remove();
+
+	const threshold = opts.wordCountThreshold ?? 0;
+	if (threshold > 0) {
+		$("p, li, blockquote").each((_, element) => {
+			const node = $(element);
+			if (node.find("img, video, audio, pre, code, table").length > 0) return;
+			const words = node.text().trim().split(/\s+/).filter(Boolean).length;
+			if (words > 0 && words < threshold) node.remove();
+		});
 	}
 
 	// Remove comments
@@ -117,6 +141,24 @@ function cleanHtmlWith(
 		}
 	}
 
+	if (opts.onlyMainContent) {
+		for (const selector of [
+			"main",
+			"article",
+			"[role='main']",
+			"[itemprop='articleBody']",
+			"#main",
+			"#primary",
+			"#content",
+			".main",
+			".content",
+		]) {
+			const main = $(selector).first();
+			if (main.length > 0) return (main.html() ?? "").trim();
+		}
+		$("header, nav, footer, aside, form").remove();
+	}
+
 	// Clean up the body
 	return ($("body").html() ?? $.html()).trim();
 }
@@ -126,11 +168,11 @@ function cleanHtmlWith(
  * Covers: standard meta, Open Graph, Twitter Cards, Dublin Core,
  * article tags, JSON-LD, favicons, feeds, and more.
  */
-export function extractMetadata(html: string): Record<string, unknown> {
-	return extractMetadataWith(cheerio.load(html));
+export function extractMetadata(html: string, baseUrl?: string): Record<string, unknown> {
+	return extractMetadataWith(cheerio.load(html), baseUrl);
 }
 
-function extractMetadataWith($: CheerioAPI): Record<string, unknown> {
+function extractMetadataWith($: CheerioAPI, baseUrl?: string): Record<string, unknown> {
 	const meta = (name: string) => $(`meta[name="${name}"]`).attr("content") ?? null;
 	const prop = (property: string) => $(`meta[property="${property}"]`).attr("content") ?? null;
 	const httpEquiv = (name: string) => $(`meta[http-equiv="${name}"]`).attr("content") ?? null;
@@ -262,6 +304,27 @@ function extractMetadataWith($: CheerioAPI): Record<string, unknown> {
 	metadata.publishedTime = metadata.articlePublishedTime ?? meta("date") ?? meta("pubdate") ?? null;
 	metadata.modifiedTime = metadata.articleModifiedTime ?? meta("last-modified") ?? null;
 
+	if (baseUrl) {
+		const documentBaseUrl = resolveDocumentBase($, baseUrl);
+		for (const key of ["canonical", "amphtml", "ogImage", "ogUrl", "twitterImage"]) {
+			const value = metadata[key];
+			if (typeof value !== "string") continue;
+			try {
+				metadata[key] = new URL(value, documentBaseUrl).href;
+			} catch {}
+		}
+		for (const key of ["alternates", "feeds", "favicons"]) {
+			const values = metadata[key];
+			if (!Array.isArray(values)) continue;
+			for (const item of values) {
+				if (!item || typeof item !== "object" || typeof item.href !== "string") continue;
+				try {
+					item.href = new URL(item.href, documentBaseUrl).href;
+				} catch {}
+			}
+		}
+	}
+
 	// Strip null values for cleaner output
 	for (const key of Object.keys(metadata)) {
 		if (metadata[key] === null) delete metadata[key];
@@ -277,8 +340,8 @@ export function extractLinks(
 	html: string,
 	baseUrl: string,
 ): {
-	internal: Array<{ href: string; text: string; title: string; baseDomain: string }>;
-	external: Array<{ href: string; text: string; title: string; baseDomain: string }>;
+	internal: LinkItem[];
+	external: LinkItem[];
 } {
 	return extractLinksWith(cheerio.load(html), baseUrl);
 }
@@ -287,13 +350,14 @@ function extractLinksWith(
 	$: CheerioAPI,
 	baseUrl: string,
 ): {
-	internal: Array<{ href: string; text: string; title: string; baseDomain: string }>;
-	external: Array<{ href: string; text: string; title: string; baseDomain: string }>;
+	internal: LinkItem[];
+	external: LinkItem[];
 } {
-	const internal: Array<{ href: string; text: string; title: string; baseDomain: string }> = [];
-	const external: Array<{ href: string; text: string; title: string; baseDomain: string }> = [];
+	const internal: LinkItem[] = [];
+	const external: LinkItem[] = [];
 
 	let baseDomain: string;
+	const documentBaseUrl = resolveDocumentBase($, baseUrl);
 	try {
 		baseDomain = new URL(baseUrl).hostname;
 	} catch {
@@ -313,7 +377,7 @@ function extractLinksWith(
 
 		let absoluteUrl: string;
 		try {
-			absoluteUrl = new URL(href, baseUrl).href;
+			absoluteUrl = new URL(href, documentBaseUrl).href;
 		} catch {
 			return;
 		}
@@ -328,7 +392,18 @@ function extractLinksWith(
 			linkDomain = "";
 		}
 
-		const link = { href: absoluteUrl, text, title, baseDomain: linkDomain };
+		const rel = ($(this).attr("rel") ?? "")
+			.split(/\s+/)
+			.map((value) => value.toLowerCase())
+			.filter(Boolean);
+		const link = {
+			href: absoluteUrl,
+			text,
+			title,
+			baseDomain: linkDomain,
+			rel,
+			nofollow: rel.includes("nofollow"),
+		};
 
 		if (linkDomain === baseDomain) {
 			internal.push(link);
@@ -337,17 +412,30 @@ function extractLinksWith(
 		}
 	});
 
-	return { internal, external };
+	return {
+		internal: deduplicateLinks(internal),
+		external: deduplicateLinks(external),
+	};
+}
+
+function deduplicateLinks<T extends { href: string }>(links: T[]): T[] {
+	const seen = new Set<string>();
+	return links.filter((link) => {
+		if (seen.has(link.href)) return false;
+		seen.add(link.href);
+		return true;
+	});
 }
 
 /**
  * Extract media items (images, videos, audio) from HTML.
  */
-export function extractMedia(html: string, baseUrl: string) {
-	return extractMediaWith(cheerio.load(html), baseUrl);
+export function extractMedia(html: string, baseUrl: string, removeBase64Images = false) {
+	return extractMediaWith(cheerio.load(html), baseUrl, removeBase64Images);
 }
 
-function extractMediaWith($: CheerioAPI, baseUrl: string) {
+function extractMediaWith($: CheerioAPI, baseUrl: string, removeBase64Images = false) {
+	const documentBaseUrl = resolveDocumentBase($, baseUrl);
 	const images: Array<{
 		src: string;
 		alt: string;
@@ -382,10 +470,11 @@ function extractMediaWith($: CheerioAPI, baseUrl: string) {
 	$("img[src]").each(function () {
 		const src = $(this).attr("src");
 		if (!src) return;
+		if (removeBase64Images && src.startsWith("data:")) return;
 
 		let absoluteSrc: string;
 		try {
-			absoluteSrc = new URL(src, baseUrl).href;
+			absoluteSrc = new URL(src, documentBaseUrl).href;
 		} catch {
 			absoluteSrc = src;
 		}
@@ -420,7 +509,7 @@ function extractMediaWith($: CheerioAPI, baseUrl: string) {
 
 		let absoluteSrc: string;
 		try {
-			absoluteSrc = new URL(src, baseUrl).href;
+			absoluteSrc = new URL(src, documentBaseUrl).href;
 		} catch {
 			absoluteSrc = src;
 		}
@@ -443,7 +532,7 @@ function extractMediaWith($: CheerioAPI, baseUrl: string) {
 
 		let absoluteSrc: string;
 		try {
-			absoluteSrc = new URL(src, baseUrl).href;
+			absoluteSrc = new URL(src, documentBaseUrl).href;
 		} catch {
 			absoluteSrc = src;
 		}
@@ -461,4 +550,26 @@ function extractMediaWith($: CheerioAPI, baseUrl: string) {
 	});
 
 	return { images, videos, audios };
+}
+
+function resolveDocumentBase($: CheerioAPI, fallback: string): string {
+	const declared = $("base[href]").first().attr("href");
+	if (!declared) return fallback;
+	try {
+		return new URL(declared, fallback).href;
+	} catch {
+		return fallback;
+	}
+}
+
+function absolutizeDocumentUrls($: CheerioAPI, baseUrl: string): void {
+	$("a[href], img[src], source[src], video[src], audio[src]").each((_, element) => {
+		const node = $(element);
+		const attribute = node.attr("href") !== undefined ? "href" : "src";
+		const value = node.attr(attribute);
+		if (!value || value.startsWith("#") || value.startsWith("data:")) return;
+		try {
+			node.attr(attribute, new URL(value, baseUrl).href);
+		} catch {}
+	});
 }

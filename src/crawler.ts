@@ -1,6 +1,7 @@
+import { join } from "node:path";
 import { CrawlCache, contentHash } from "./cache/database";
 import { shouldReadCache, shouldWriteCache } from "./cache/mode";
-import type { BrowserConfig, CrawlerRunConfig } from "./config";
+import type { BrowserConfig, CrawlerRunConfig, CrawlerRunConfigOverrides } from "./config";
 import { createBrowserConfig, createCrawlerRunConfig } from "./config";
 import type { DeepCrawlConfig, DeepCrawlStrategy } from "./deep-crawl/strategy";
 import {
@@ -12,7 +13,7 @@ import type { EngineManagerConfig } from "./engines/engine-manager";
 import { EngineManager } from "./engines/engine-manager";
 import { FetchEngine } from "./engines/fetch";
 import { PlaywrightEngine } from "./engines/playwright";
-import type { CrawlResult } from "./models";
+import type { CrawlResponse, CrawlResult, ScrapeDocument, ScrapeFormat } from "./models";
 import { createErrorResult } from "./models";
 import { buildStaticSnapshot } from "./snapshot/accessibility";
 import {
@@ -37,6 +38,8 @@ import { toFriendlyError } from "./utils/errors";
 import { detectInteractiveElementsStatic } from "./utils/interactive-static";
 import type { Logger } from "./utils/logger";
 import { ConsoleLogger, SilentLogger } from "./utils/logger";
+import { isSameDomain, normalizeUrl, stableStringify } from "./utils/url";
+import { URLSeeder } from "./utils/url-seeder";
 
 // ---------------------------------------------------------------------------
 // Constructor options
@@ -49,6 +52,8 @@ export interface WebCrawlerOptions {
 	markdownGenerator?: MarkdownGenerationStrategy;
 	logger?: Logger;
 	cacheDir?: string;
+	/** Explicit SQLite cache path. Takes precedence over cacheDir. */
+	cachePath?: string;
 	verbose?: boolean;
 	/**
 	 * Enable the multi-engine system. When true, tries a lightweight
@@ -57,6 +62,29 @@ export interface WebCrawlerOptions {
 	 */
 	useEngines?: boolean;
 	engineConfig?: Partial<EngineManagerConfig>;
+}
+
+export type ScrapeOptions = CrawlerRunConfigOverrides & { formats?: ScrapeFormat[] };
+
+export interface MapOptions {
+	limit?: number;
+	sitemap?: "include" | "skip" | "only";
+	includeSubdomains?: boolean;
+	ignoreQueryParameters?: boolean;
+	includePageLinks?: boolean;
+	timeout?: number;
+	signal?: AbortSignal;
+}
+
+export interface MapLink {
+	url: string;
+	title?: string;
+	description?: string;
+}
+
+export interface MapResult {
+	links: MapLink[];
+	sitemaps: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +121,9 @@ export class WebCrawler {
 	private logger: Logger;
 	private browserConfig: BrowserConfig;
 	private ready = false;
+	private startPromise: Promise<void> | null = null;
 	private shutdownHandler: (() => void) | null = null;
+	private cachePath: string | undefined;
 
 	constructor(opts: WebCrawlerOptions = {}) {
 		const verbose = opts.verbose ?? false;
@@ -121,6 +151,8 @@ export class WebCrawler {
 
 		this.scraper = opts.scrapingStrategy ?? new CheerioScrapingStrategy();
 		this.markdownGen = opts.markdownGenerator ?? new DefaultMarkdownGenerator();
+		this.cachePath =
+			opts.cachePath ?? (opts.cacheDir ? join(opts.cacheDir, "cache.db") : undefined);
 	}
 
 	// -------------------------------------------------------------------------
@@ -129,24 +161,30 @@ export class WebCrawler {
 
 	async start(): Promise<void> {
 		if (this.ready) return;
-		if (this.engineManager) {
-			await this.engineManager.start();
-		} else if (this.strategy) {
-			await this.strategy.start();
+		if (this.startPromise) return this.startPromise;
+		this.startPromise = this.initialize();
+		try {
+			await this.startPromise;
+		} finally {
+			this.startPromise = null;
 		}
+	}
 
-		// Graceful shutdown on process exit
+	private async initialize(): Promise<void> {
+		if (this.engineManager) await this.engineManager.start();
+		else if (this.strategy) await this.strategy.start();
+
 		this.shutdownHandler = () => {
 			this.close().catch(() => {});
 		};
 		process.on("SIGINT", this.shutdownHandler);
 		process.on("SIGTERM", this.shutdownHandler);
-		this.cache = new CrawlCache();
 		this.ready = true;
 		this.logger.info("Crawler started");
 	}
 
 	async close(): Promise<void> {
+		if (this.startPromise) await this.startPromise.catch(() => {});
 		if (!this.ready) return;
 
 		// Remove shutdown handlers
@@ -167,12 +205,18 @@ export class WebCrawler {
 		this.logger.info("Crawler closed");
 	}
 
+	async [Symbol.asyncDispose](): Promise<void> {
+		await this.close();
+	}
+
 	// -------------------------------------------------------------------------
 	// Hooks
 	// -------------------------------------------------------------------------
 
 	setHook(type: HookType, fn: HookFn): void {
-		if (this.strategy) {
+		if (this.engineManager) {
+			this.engineManager.setHook(type, fn);
+		} else if (this.strategy) {
 			this.strategy.setHook(type, fn);
 		}
 	}
@@ -181,51 +225,92 @@ export class WebCrawler {
 	// Crawl
 	// -------------------------------------------------------------------------
 
-	async crawl(url: string, config?: Partial<CrawlerRunConfig>): Promise<CrawlResult> {
+	async crawl(url: string, config?: CrawlerRunConfigOverrides): Promise<CrawlResult> {
+		const totalStart = Date.now();
 		try {
 			validateUrl(url);
 		} catch (err) {
 			return createErrorResult(url ?? "", toFriendlyError(err));
 		}
 
-		if (!this.ready) {
-			await this.start();
+		const runConfig = createCrawlerRunConfig(config);
+		try {
+			runConfig.signal?.throwIfAborted();
+			if (!this.ready) await this.start();
+		} catch (err) {
+			return createErrorResult(url, toFriendlyError(err));
 		}
 
-		const runConfig = createCrawlerRunConfig(config);
-
 		try {
+			const cacheKey = this.buildCacheKey(url, runConfig);
+			const usesCache =
+				shouldReadCache(runConfig.cacheMode) || shouldWriteCache(runConfig.cacheMode);
+			const cache = usesCache ? this.getCache() : null;
+
 			// Check cache
-			if (shouldReadCache(runConfig.cacheMode) && this.cache) {
-				const cached = this.cache.get(url);
+			if (shouldReadCache(runConfig.cacheMode) && cache) {
+				const cached = cache.get(cacheKey);
 				if (cached) {
-					this.logger.debug(`Cache hit for ${url}`);
-					const result: CrawlResult = JSON.parse(cached.result);
-					result.cacheStatus = "hit";
-					result.cachedAt = cached.cachedAt;
-					return result;
+					const ageMs = Date.now() - cached.cachedAt * 1000;
+					if (
+						runConfig.cacheMaxAgeMs !== 0 &&
+						(runConfig.cacheMaxAgeMs === null || ageMs <= runConfig.cacheMaxAgeMs)
+					) {
+						this.logger.debug(`Cache hit for ${url}`);
+						const result = deserializeResult(cached.result);
+						result.cacheStatus = "hit";
+						result.cachedAt = cached.cachedAt;
+						result.timings = { fetchMs: 0, totalMs: Date.now() - totalStart };
+						return result;
+					}
+					cache.delete(cacheKey);
 				}
 			}
 
-			// Fetch page
-			const response = this.engineManager
-				? (await this.engineManager.fetch(url, runConfig)).response
-				: await this.strategy!.crawl(url, runConfig);
+			const fetchStart = Date.now();
+			let engine = "custom";
+			let fetchMs = 0;
+			let response: CrawlResponse;
+			if (this.engineManager) {
+				const fetched = await this.engineManager.fetch(url, runConfig);
+				response = fetched.response;
+				engine = fetched.engine;
+				fetchMs = fetched.durationMs;
+			} else {
+				response = await this.strategy!.crawl(url, runConfig);
+				fetchMs = Date.now() - fetchStart;
+			}
 
-			// Scrape content
-			const scraped = this.scraper.scrape(url, response.html, runConfig);
+			const finalUrl = response.redirectedUrl ?? url;
+			const scraped = this.scraper.scrape(finalUrl, response.html, runConfig);
+			const metadata = {
+				...scraped.metadata,
+				sourceURL: url,
+				url: finalUrl,
+				statusCode: response.statusCode,
+				contentType: response.responseHeaders["content-type"] ?? scraped.metadata.contentType,
+				engine,
+			};
 
-			// Generate markdown
 			let markdown = null;
 			if (runConfig.generateMarkdown && scraped.success) {
-				markdown = this.markdownGen.generate(url, scraped.cleanedHtml);
+				markdown = this.markdownGen.generate(finalUrl, scraped.cleanedHtml, {
+					contentFilter: runConfig.contentFilter,
+				});
 			}
 
 			// Run extraction strategy
 			let extractedContent: string | null = null;
 			if (runConfig.extractionStrategy) {
 				const strategy = this.resolveExtractionStrategy(runConfig.extractionStrategy);
-				const items = await strategy.extract(url, scraped.cleanedHtml);
+				const extractionHtml =
+					runConfig.wordCountThreshold > 0
+						? this.scraper.scrape(finalUrl, response.html, {
+								...runConfig,
+								wordCountThreshold: 0,
+							}).cleanedHtml
+						: scraped.cleanedHtml;
+				const items = await strategy.extract(finalUrl, extractionHtml);
 				extractedContent = JSON.stringify(items);
 			}
 
@@ -245,7 +330,7 @@ export class WebCrawler {
 				links: scraped.links,
 				markdown,
 				extractedContent,
-				metadata: scraped.metadata,
+				metadata,
 				errorMessage: null,
 				statusCode: response.statusCode,
 				responseHeaders: response.responseHeaders,
@@ -256,15 +341,24 @@ export class WebCrawler {
 				consoleMessages: response.consoleMessages,
 				sessionId: runConfig.sessionId,
 				snapshot,
-				interactiveElements: null,
+				interactiveElements:
+					response.interactiveElements ??
+					(runConfig.detectInteractiveElements
+						? detectInteractiveElementsStatic(response.html)
+						: null),
 				cacheStatus: "miss",
 				cachedAt: null,
+				engine,
+				timings: { fetchMs, totalMs: Date.now() - totalStart },
+				actions: response.actions ?? null,
 			};
 
 			// Write to cache
-			if (shouldWriteCache(runConfig.cacheMode) && this.cache) {
-				this.cache.set(url, JSON.stringify(result), {
+			if (shouldWriteCache(runConfig.cacheMode) && cache) {
+				cache.set(cacheKey, JSON.stringify(result), {
 					contentHash: contentHash(result.cleanedHtml ?? result.html),
+					etag: response.responseHeaders.etag,
+					lastModified: response.responseHeaders["last-modified"],
 				});
 			}
 
@@ -272,8 +366,110 @@ export class WebCrawler {
 		} catch (err) {
 			const message = toFriendlyError(err);
 			this.logger.error(`Crawl failed for ${url}: ${message}`);
-			return createErrorResult(url, message);
+			const result = createErrorResult(url, message);
+			result.timings = { fetchMs: 0, totalMs: Date.now() - totalStart };
+			return result;
 		}
+	}
+
+	/**
+	 * Firecrawl-style format-driven scraping. Markdown is the default and main
+	 * content/base64 cleanup are enabled unless explicitly overridden.
+	 */
+	async scrape(url: string, options: ScrapeOptions = {}): Promise<ScrapeDocument> {
+		const { formats = ["markdown"], ...overrides } = options;
+		const uniqueFormats = [...new Set(formats)];
+		const result = await this.crawl(url, {
+			...overrides,
+			onlyMainContent: overrides.onlyMainContent ?? true,
+			removeBase64Images: overrides.removeBase64Images ?? true,
+			generateMarkdown: uniqueFormats.includes("markdown"),
+			screenshot: uniqueFormats.includes("screenshot"),
+			pdf: uniqueFormats.includes("pdf"),
+			snapshot: uniqueFormats.includes("snapshot"),
+		});
+
+		const document: ScrapeDocument = {
+			url: result.redirectedUrl ?? result.url,
+			success: result.success,
+			statusCode: result.statusCode,
+			error: result.errorMessage,
+			metadata: result.metadata,
+			actions: result.actions ?? null,
+			cacheStatus: result.cacheStatus,
+		};
+		if (uniqueFormats.includes("markdown")) {
+			document.markdown = result.markdown?.fitMarkdown ?? result.markdown?.rawMarkdown ?? "";
+		}
+		if (uniqueFormats.includes("html")) document.html = result.cleanedHtml ?? "";
+		if (uniqueFormats.includes("rawHtml")) document.rawHtml = result.html;
+		if (uniqueFormats.includes("links")) {
+			document.links = [...result.links.internal, ...result.links.external].map(
+				(link) => link.href,
+			);
+		}
+		if (uniqueFormats.includes("images")) {
+			document.images = result.media.images.map((image) => image.src);
+		}
+		if (uniqueFormats.includes("screenshot")) document.screenshot = result.screenshot;
+		if (uniqueFormats.includes("pdf")) document.pdf = result.pdf;
+		if (uniqueFormats.includes("snapshot")) document.snapshot = result.snapshot;
+		if (uniqueFormats.includes("json")) {
+			if (result.extractedContent) document.json = parseExtractedContent(result.extractedContent);
+			else {
+				document.json = null;
+				document.warnings = [
+					'The "json" format requires an extractionStrategy; no structured data was produced.',
+				];
+			}
+		}
+		return document;
+	}
+
+	/** Discover a site's URL surface from robots/sitemaps and the start page. */
+	async map(startUrl: string, options: MapOptions = {}): Promise<MapResult> {
+		validateUrl(startUrl);
+		options.signal?.throwIfAborted();
+		const limit = Math.max(1, Math.floor(options.limit ?? 5_000));
+		const sitemapMode = options.sitemap ?? "include";
+		const links = new Map<string, MapLink>();
+		const sitemaps: string[] = [];
+		const add = (candidate: string, details: Omit<MapLink, "url"> = {}) => {
+			if (links.size >= limit) return;
+			const normalized = normalizeUrl(candidate, startUrl, {
+				ignoreQueryParameters: options.ignoreQueryParameters,
+			});
+			if (!normalized || !isSameDomain(normalized, startUrl, options.includeSubdomains)) return;
+			if (!links.has(normalized)) links.set(normalized, { url: normalized, ...details });
+		};
+
+		if (sitemapMode !== "skip") {
+			const seeded = await new URLSeeder({
+				timeout: options.timeout,
+				maxUrls: limit,
+				signal: options.signal,
+			}).seed(startUrl);
+			sitemaps.push(...seeded.sitemaps);
+			for (const url of seeded.urls) add(url);
+		}
+
+		if (sitemapMode !== "only" && (options.includePageLinks ?? true) && links.size < limit) {
+			const result = await this.crawl(startUrl, {
+				generateMarkdown: false,
+				wordCountThreshold: 0,
+				signal: options.signal ?? null,
+			});
+			add(result.redirectedUrl ?? result.url, {
+				title: typeof result.metadata?.title === "string" ? result.metadata.title : undefined,
+				description:
+					typeof result.metadata?.description === "string"
+						? result.metadata.description
+						: undefined,
+			});
+			for (const link of result.links.internal) add(link.href, { title: link.text || undefined });
+		}
+
+		return { links: [...links.values()], sitemaps: [...new Set(sitemaps)] };
 	}
 
 	/**
@@ -281,22 +477,30 @@ export class WebCrawler {
 	 */
 	async crawlMany(
 		urls: string[],
-		config?: Partial<CrawlerRunConfig>,
-		opts: { concurrency?: number } = {},
+		config?: CrawlerRunConfigOverrides,
+		opts: {
+			concurrency?: number;
+			signal?: AbortSignal;
+			onProgress?: (result: CrawlResult, index: number, completed: number, total: number) => void;
+		} = {},
 	): Promise<CrawlResult[]> {
 		if (!this.ready) {
 			await this.start();
 		}
 
-		const concurrency = opts.concurrency ?? 5;
-		const results: CrawlResult[] = [];
-		const queue = [...urls];
+		const concurrency = Math.max(1, Math.floor(opts.concurrency ?? 5));
+		const results = new Array<CrawlResult>(urls.length);
+		let nextIndex = 0;
+		let completed = 0;
+		const crawlConfig = { ...config, signal: opts.signal ?? config?.signal ?? null };
 
-		const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
-			while (queue.length > 0) {
-				const url = queue.shift()!;
-				const result = await this.crawl(url, config);
-				results.push(result);
+		const workers = Array.from({ length: Math.min(concurrency, urls.length) }, async () => {
+			while (nextIndex < urls.length) {
+				const index = nextIndex++;
+				const result = await this.crawl(urls[index], crawlConfig);
+				results[index] = result;
+				completed++;
+				opts.onProgress?.(result, index, completed, urls.length);
 			}
 		});
 
@@ -309,7 +513,7 @@ export class WebCrawler {
 	 */
 	async processHtml(
 		html: string,
-		config?: Partial<CrawlerRunConfig>,
+		config?: CrawlerRunConfigOverrides,
 		url = "raw:",
 	): Promise<CrawlResult> {
 		const runConfig = createCrawlerRunConfig(config);
@@ -318,13 +522,22 @@ export class WebCrawler {
 
 		let markdown = null;
 		if (runConfig.generateMarkdown && scraped.success) {
-			markdown = this.markdownGen.generate(url, scraped.cleanedHtml);
+			markdown = this.markdownGen.generate(url, scraped.cleanedHtml, {
+				contentFilter: runConfig.contentFilter,
+			});
 		}
 
 		let extractedContent: string | null = null;
 		if (runConfig.extractionStrategy) {
 			const strategy = this.resolveExtractionStrategy(runConfig.extractionStrategy);
-			const items = await strategy.extract(url, scraped.cleanedHtml);
+			const extractionHtml =
+				runConfig.wordCountThreshold > 0
+					? this.scraper.scrape(url, html, {
+							...runConfig,
+							wordCountThreshold: 0,
+						}).cleanedHtml
+					: scraped.cleanedHtml;
+			const items = await strategy.extract(url, extractionHtml);
 			extractedContent = JSON.stringify(items);
 		}
 
@@ -353,6 +566,9 @@ export class WebCrawler {
 				: null,
 			cacheStatus: null,
 			cachedAt: null,
+			engine: "process",
+			timings: { fetchMs: 0, totalMs: 0 },
+			actions: null,
 		};
 	}
 
@@ -365,7 +581,7 @@ export class WebCrawler {
 	 */
 	async deepCrawl(
 		startUrl: string,
-		crawlConfig?: Partial<CrawlerRunConfig>,
+		crawlConfig?: CrawlerRunConfigOverrides,
 		deepConfig?: Partial<DeepCrawlConfig>,
 	): Promise<CrawlResult[]> {
 		validateUrl(startUrl);
@@ -384,7 +600,7 @@ export class WebCrawler {
 	 */
 	async *deepCrawlStream(
 		startUrl: string,
-		crawlConfig?: Partial<CrawlerRunConfig>,
+		crawlConfig?: CrawlerRunConfigOverrides,
 		deepConfig?: Partial<DeepCrawlConfig>,
 	): AsyncGenerator<CrawlResult, void, unknown> {
 		validateUrl(startUrl);
@@ -407,6 +623,27 @@ export class WebCrawler {
 	// Private
 	// -------------------------------------------------------------------------
 
+	private getCache(): CrawlCache {
+		if (!this.cache) this.cache = new CrawlCache(this.cachePath);
+		return this.cache;
+	}
+
+	private buildCacheKey(url: string, config: CrawlerRunConfig): string {
+		const {
+			cacheMode: _cacheMode,
+			cacheMaxAgeMs: _cacheMaxAgeMs,
+			signal: _signal,
+			...identity
+		} = config;
+		const normalizedUrl =
+			normalizeUrl(url, undefined, {
+				removeTrackingParameters: false,
+				sortQueryParameters: false,
+				stripTrailingSlash: false,
+			}) ?? url;
+		return `${normalizedUrl}::v2:${contentHash(stableStringify(identity))}`;
+	}
+
 	private resolveExtractionStrategy(config: {
 		type: string;
 		params: Record<string, unknown>;
@@ -426,6 +663,37 @@ export class WebCrawler {
 	}
 }
 
+function deserializeResult(serialized: string): CrawlResult {
+	return JSON.parse(serialized, (_key, value: unknown) => {
+		if (
+			value &&
+			typeof value === "object" &&
+			(value as { type?: string }).type === "Buffer" &&
+			Array.isArray((value as { data?: unknown }).data)
+		) {
+			return Buffer.from((value as { data: number[] }).data);
+		}
+		return value;
+	}) as CrawlResult;
+}
+
+function parseExtractedContent(content: string): unknown {
+	try {
+		const parsed = JSON.parse(content) as unknown;
+		if (!Array.isArray(parsed)) return parsed;
+		return parsed.map((item) => {
+			if (!item || typeof item !== "object" || typeof item.content !== "string") return item;
+			try {
+				return JSON.parse(item.content);
+			} catch {
+				return item.content;
+			}
+		});
+	} catch {
+		return content;
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
@@ -436,7 +704,10 @@ function validateUrl(url: string): void {
 	}
 	if (url === "raw:") return; // processHtml sentinel
 	try {
-		new URL(url);
+		const parsed = new URL(url);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+			throw new Error("unsupported protocol");
+		}
 	} catch {
 		throw new Error(
 			`Invalid URL: "${url}". Must be a valid absolute URL (e.g., https://example.com)`,

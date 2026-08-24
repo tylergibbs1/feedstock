@@ -38,6 +38,17 @@ describe("FetchEngine", () => {
 		});
 		expect(engine.canHandle(config)).toBe(false);
 	});
+
+	test("cannot handle declarative actions or browser-only behavior", () => {
+		const engine = new FetchEngine();
+		expect(
+			engine.canHandle(
+				createCrawlerRunConfig({ actions: [{ type: "click", selector: "button" }] }),
+			),
+		).toBe(false);
+		expect(engine.canHandle(createCrawlerRunConfig({ inlineIframes: true }))).toBe(false);
+		expect(engine.canHandle(createCrawlerRunConfig({ magicMode: true }))).toBe(false);
+	});
 });
 
 describe("likelyNeedsJavaScript", () => {

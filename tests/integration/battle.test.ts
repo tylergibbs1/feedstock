@@ -196,6 +196,30 @@ describe("Custom JS execution", () => {
 	});
 });
 
+describe("Declarative browser actions", () => {
+	test("runs actions in order and returns their explicit outputs", async () => {
+		const result = await crawler.crawl(`${server.url}/products`, {
+			cacheMode: CacheMode.Bypass,
+			actions: [
+				{
+					type: "executeJavascript",
+					script:
+						"document.body.insertAdjacentHTML('beforeend', '<div id=action-result>Action complete</div>'); 'done'",
+				},
+				{ type: "wait", selector: "#action-result" },
+				{ type: "scrape" },
+				{ type: "screenshot", fullPage: false },
+			],
+		});
+		expect(result.success).toBe(true);
+		expect(result.engine).toBe("playwright");
+		expect(result.html).toContain("Action complete");
+		expect(result.actions?.javascriptReturns[0].value).toBe("done");
+		expect(result.actions?.scrapes[0].html).toContain("Action complete");
+		expect(result.actions?.screenshots[0].base64.length).toBeGreaterThan(100);
+	});
+});
+
 // ---------------------------------------------------------------------------
 // Network request capture
 // ---------------------------------------------------------------------------

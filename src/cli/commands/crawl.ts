@@ -3,7 +3,7 @@
  */
 
 import { CacheMode } from "../../cache/mode";
-import type { CrawlerRunConfig } from "../../config";
+import type { CrawlerRunConfig, CrawlerRunConfigOverrides } from "../../config";
 import { createBrowserConfig, createCrawlerRunConfig } from "../../config";
 import type { LayeredConfig } from "../../config-loader";
 import { WebCrawler } from "../../crawler";
@@ -37,10 +37,10 @@ export async function runCrawl(args: ParsedArgs, config: LayeredConfig): Promise
 export function buildRunConfig(args: ParsedArgs, config: LayeredConfig): CrawlerRunConfig {
 	// Raw JSON passthrough takes precedence
 	const jsonStr = getString(args.flags, "json");
-	const jsonOverrides = jsonStr ? JSON.parse(jsonStr) : {};
+	const jsonOverrides = (jsonStr ? JSON.parse(jsonStr) : {}) as CrawlerRunConfigOverrides;
 
 	// Parse individual flags
-	const flagOverrides: Partial<CrawlerRunConfig> = {};
+	const flagOverrides: CrawlerRunConfigOverrides = {};
 
 	const screenshot = getBool(args.flags, "screenshot");
 	if (screenshot !== undefined) flagOverrides.screenshot = screenshot;
@@ -110,9 +110,58 @@ export function buildRunConfig(args: ParsedArgs, config: LayeredConfig): Crawler
 	if (navWait)
 		flagOverrides.navigationWaitUntil = navWait as CrawlerRunConfig["navigationWaitUntil"];
 
+	const onlyMainContent = getBool(args.flags, "only-main-content");
+	if (onlyMainContent !== undefined) flagOverrides.onlyMainContent = onlyMainContent;
+
+	const removeBase64Images = getBool(args.flags, "remove-base64-images");
+	if (removeBase64Images !== undefined) flagOverrides.removeBase64Images = removeBase64Images;
+
+	const cacheMaxAgeMs = getNumber(args.flags, "cache-max-age");
+	if (cacheMaxAgeMs !== undefined) flagOverrides.cacheMaxAgeMs = cacheMaxAgeMs;
+
+	const maxResponseBytes = getNumber(args.flags, "max-response-bytes");
+	if (maxResponseBytes !== undefined) flagOverrides.maxResponseBytes = maxResponseBytes;
+
+	const rawHeaders = args.flags.header;
+	const headers = Array.isArray(rawHeaders)
+		? rawHeaders
+		: typeof rawHeaders === "string"
+			? [rawHeaders]
+			: undefined;
+	if (headers) {
+		flagOverrides.headers = Object.fromEntries(
+			headers.map((header) => {
+				const separator = header.indexOf(":");
+				if (separator < 1) throw new Error(`Invalid header: ${header}. Expected Name:Value`);
+				return [header.slice(0, separator).trim(), header.slice(separator + 1).trim()];
+			}),
+		);
+	}
+
+	const maxAttempts = getNumber(args.flags, "max-attempts");
+	if (maxAttempts !== undefined) {
+		flagOverrides.retry = { maxAttempts };
+	}
+
+	const magic = getBool(args.flags, "magic");
+	if (magic !== undefined) flagOverrides.magicMode = magic;
+
+	const actions = getString(args.flags, "actions");
+	if (actions) flagOverrides.actions = JSON.parse(actions);
+
 	return createCrawlerRunConfig({
 		...config.crawl,
 		...jsonOverrides,
 		...flagOverrides,
+		headers: {
+			...config.crawl.headers,
+			...jsonOverrides.headers,
+			...flagOverrides.headers,
+		},
+		retry: {
+			...config.crawl.retry,
+			...jsonOverrides.retry,
+			...flagOverrides.retry,
+		},
 	});
 }

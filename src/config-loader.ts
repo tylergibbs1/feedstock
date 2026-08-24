@@ -10,7 +10,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { BrowserConfig, CrawlerRunConfig } from "./config";
+import type { BrowserConfig, CrawlerRunConfigOverrides } from "./config";
 
 // ---------------------------------------------------------------------------
 // Project config file
@@ -18,7 +18,7 @@ import type { BrowserConfig, CrawlerRunConfig } from "./config";
 
 export interface FeedstockProjectConfig {
 	browser?: Partial<BrowserConfig>;
-	crawl?: Partial<CrawlerRunConfig>;
+	crawl?: CrawlerRunConfigOverrides;
 }
 
 /**
@@ -61,7 +61,7 @@ export function loadProjectConfig(path: string | null): FeedstockProjectConfig {
 /** Map FEEDSTOCK_* env vars to config overrides. */
 export function loadEnvConfig(): {
 	browser: Partial<BrowserConfig>;
-	crawl: Partial<CrawlerRunConfig>;
+	crawl: CrawlerRunConfigOverrides;
 } {
 	const browser: Record<string, unknown> = {};
 	const crawl: Record<string, unknown> = {};
@@ -105,7 +105,7 @@ export function loadEnvConfig(): {
 
 	return {
 		browser: browser as Partial<BrowserConfig>,
-		crawl: crawl as Partial<CrawlerRunConfig>,
+		crawl: crawl as CrawlerRunConfigOverrides,
 	};
 }
 
@@ -115,7 +115,7 @@ export function loadEnvConfig(): {
 
 export interface LayeredConfig {
 	browser: Partial<BrowserConfig>;
-	crawl: Partial<CrawlerRunConfig>;
+	crawl: CrawlerRunConfigOverrides;
 	/** Path to the project config file that was loaded, if any */
 	configPath: string | null;
 }

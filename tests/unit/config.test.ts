@@ -135,4 +135,21 @@ describe("CrawlerRunConfig", () => {
 		});
 		expect(config.extractionStrategy?.type).toBe("css");
 	});
+
+	test("deep-merges request headers and retry settings", () => {
+		const config = createCrawlerRunConfig({
+			headers: { Authorization: "Bearer test" },
+			retry: { maxAttempts: 5 },
+		});
+		expect(config.headers.Authorization).toBe("Bearer test");
+		expect(config.retry.maxAttempts).toBe(5);
+		expect(config.retry.statuses).toContain(429);
+	});
+
+	test("magic mode expands to the safe anti-bot defaults", () => {
+		const config = createCrawlerRunConfig({ magicMode: true });
+		expect(config.simulateUser).toBe(true);
+		expect(config.removeConsentPopups).toBe(true);
+		expect(config.blockResources).toBe("media-only");
+	});
 });

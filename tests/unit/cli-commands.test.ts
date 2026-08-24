@@ -59,7 +59,7 @@ describe("CLI: schema", () => {
 		expect(exitCode).toBe(0);
 		const data = JSON.parse(stdout);
 		expect(data.commands).toBeArray();
-		expect(data.commands.length).toBe(7);
+		expect(data.commands.length).toBe(9);
 	});
 
 	test("shows schema for crawl", async () => {
@@ -126,6 +126,22 @@ describe("CLI: process", () => {
 	});
 });
 
+describe("CLI: scrape and map", () => {
+	test("scrape validates required URL and output formats", async () => {
+		const missing = await run(["scrape"]);
+		expect(missing.exitCode).toBe(2);
+		const invalid = await run(["scrape", "https://example.com", "--formats", "unknown"]);
+		expect(invalid.exitCode).toBe(2);
+		expect(JSON.parse(invalid.stderr).message).toContain("Unknown scrape format");
+	});
+
+	test("map validates required URL without starting a browser", async () => {
+		const result = await run(["map"]);
+		expect(result.exitCode).toBe(2);
+		expect(JSON.parse(result.stderr).code).toBe("USAGE_ERROR");
+	});
+});
+
 describe("CLI: cache", () => {
 	test("stats returns JSON", async () => {
 		const { stdout, exitCode } = await run(["cache", "stats"]);
@@ -165,7 +181,7 @@ describe("CLI: deep-crawl", () => {
 	});
 
 	test("missing URL exits 2", async () => {
-		const { stderr, exitCode } = await run(["deep-crawl"]);
+		const { exitCode } = await run(["deep-crawl"]);
 		expect(exitCode).toBe(2);
 	});
 });

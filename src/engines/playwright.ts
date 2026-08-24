@@ -5,7 +5,11 @@
 
 import type { BrowserConfig, CrawlerRunConfig } from "../config";
 import type { CrawlResponse } from "../models";
-import { PlaywrightCrawlerStrategy } from "../strategies/crawler-strategy";
+import {
+	type HookFn,
+	type HookType,
+	PlaywrightCrawlerStrategy,
+} from "../strategies/crawler-strategy";
 import { Engine, type EngineCapabilities } from "./base";
 
 export class PlaywrightEngine extends Engine {
@@ -44,5 +48,9 @@ export class PlaywrightEngine extends Engine {
 	async fetch(url: string, config: CrawlerRunConfig): Promise<CrawlResponse> {
 		if (!this.started) await this.start();
 		return this.strategy.crawl(url, config);
+	}
+
+	setHook(type: HookType, fn: HookFn): void {
+		this.strategy.setHook(type, fn);
 	}
 }

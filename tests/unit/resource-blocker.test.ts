@@ -70,13 +70,21 @@ describe("BlockResourcesConfig type", () => {
 describe("applyResourceBlocking", () => {
 	// Mock BrowserContext that records route calls
 	function createMockContext() {
-		const routes: Array<{ pattern: string }> = [];
+		const routes: Array<{ pattern: string; handler: (route: Route) => Promise<void> }> = [];
+		const unroutes: string[] = [];
 		return {
 			routes,
-			route: mock(async (pattern: string, _handler: (route: Route) => void) => {
-				routes.push({ pattern });
+			unroutes,
+			route: mock(async (pattern: string, handler: (route: Route) => Promise<void>) => {
+				routes.push({ pattern, handler });
 			}),
-		} as unknown as BrowserContext & { routes: Array<{ pattern: string }> };
+			unroute: mock(async (pattern: string) => {
+				unroutes.push(pattern);
+			}),
+		} as unknown as BrowserContext & {
+			routes: Array<{ pattern: string; handler: (route: Route) => Promise<void> }>;
+			unroutes: string[];
+		};
 	}
 
 	test("does nothing for false", async () => {
@@ -134,6 +142,25 @@ describe("applyResourceBlocking", () => {
 		});
 		// 1 pattern route, no resource type route (empty array)
 		expect(ctx.routes.length).toBe(1);
+	});
+
+	test("falls through unblocked requests and removes every route on cleanup", async () => {
+		const { applyResourceBlocking } = await import("../../src/utils/resource-blocker");
+		const ctx = createMockContext();
+		const cleanup = await applyResourceBlocking(ctx, "fast");
+		const fallback = mock(async () => {});
+		const abort = mock(async () => {});
+		const general = ctx.routes.find((route) => route.pattern === "**/*")!;
+		await general.handler({
+			request: () => ({ resourceType: () => "document" }),
+			fallback,
+			abort,
+		} as unknown as Route);
+		expect(fallback).toHaveBeenCalledTimes(1);
+		expect(abort).not.toHaveBeenCalled();
+
+		await cleanup();
+		expect(ctx.unroutes).toHaveLength(ctx.routes.length);
 	});
 
 	test("throws for unknown profile name", async () => {
