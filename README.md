@@ -8,6 +8,60 @@
   High-performance web crawler and scraper for TypeScript, powered by <a href="https://bun.sh">Bun</a> and <a href="https://playwright.dev">Playwright</a>.
 </p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/feedstock"><img src="https://img.shields.io/npm/v/feedstock" alt="npm" /></a>
+  <a href="https://github.com/tylergibbs1/feedstock/actions/workflows/ci.yml"><img src="https://github.com/tylergibbs1/feedstock/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+</p>
+
+<p align="center">
+  <a href="https://www.feedstockai.com/">Documentation</a> · <a href="docs/getting-started.md">Getting started</a>
+</p>
+
+## Quick start
+
+```bash
+bun add feedstock
+bunx playwright install chromium
+```
+
+```typescript
+import { WebCrawler } from "feedstock";
+
+await using crawler = new WebCrawler();
+
+const page = await crawler.scrape("https://example.com", {
+  formats: ["markdown", "links", "images"],
+  contentFilter: { type: "pruning", minWords: 8 },
+});
+
+console.log(page.markdown);
+console.log(page.links);
+```
+
+`WebCrawler` implements async disposal. If your runtime does not support `await using`, call
+`await crawler.close()` in a `finally` block.
+
+Or use the CLI:
+
+```bash
+bun add -g feedstock
+bunx playwright install chromium
+feedstock scrape https://example.com --formats markdown,links,images
+```
+
+## How it works
+
+```mermaid
+flowchart LR
+  A[URL] --> B[Fetch engine<br/>plain HTTP]
+  B -->|SPA shell or bot block| C[Browser engine<br/>Playwright, CDP, Lightpanda]
+  B --> D[Extraction and markdown]
+  C --> D
+  D --> E[Requested formats<br/>markdown, links, json, snapshot...]
+```
+
+Feedstock tries a lightweight HTTP fetch first and only launches a browser when the page needs it: an empty SPA shell or an anti-bot block (401/403/429/503) triggers escalation. The result is cached by configuration, then turned into whichever formats you asked for.
+
 ## Features
 
 - **Single & multi-page crawling** with concurrent execution
@@ -88,30 +142,6 @@ feedstock cache prune --older-than 86400000
 ```
 
 All commands support `--output json|ndjson|text`, `--fields` for context window discipline, and `--json` for raw config passthrough. See `feedstock --help` or `feedstock schema <command>` for full details.
-
-## Quick Start
-
-```bash
-bun add feedstock
-bunx playwright install chromium
-```
-
-```typescript
-import { WebCrawler } from "feedstock";
-
-await using crawler = new WebCrawler();
-
-const page = await crawler.scrape("https://example.com", {
-  formats: ["markdown", "links", "images"],
-  contentFilter: { type: "pruning", minWords: 8 },
-});
-
-console.log(page.markdown);
-console.log(page.links);
-```
-
-`WebCrawler` implements async disposal. If your runtime does not support `await using`, call
-`await crawler.close()` in a `finally` block.
 
 ## Scraping, Mapping, and Page Actions
 
@@ -529,13 +559,13 @@ console.log(result.snapshot);
 
 ## Documentation
 
-Full documentation at [feedstockai.com](https://www.feedstockai.com/).
+Full documentation at [feedstockai.com](https://www.feedstockai.com/). In-repo guides live in [`docs/`](docs/): [getting started](docs/getting-started.md), [deep crawling](docs/deep-crawling.md), [extraction](docs/extraction.md), [stealth and anti-bot](docs/stealth-and-antibot.md), [performance](docs/performance.md), and a [comparison](docs/comparison.md) with other crawlers.
 
 ## Development
 
 ```bash
 bun install
-bun test              # 325 tests
+bun test              # all tests
 bun test tests/unit   # unit tests only
 bun run typecheck     # tsc --noEmit
 bun run lint          # biome check
@@ -545,4 +575,4 @@ bun run dogfood.ts    # 148 checks against real sites
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)
